@@ -1,0 +1,7 @@
+# generated meshes and fields
+*.stl
+*.3mf
+*.obj
+*.ply
+*.npz
+output/
