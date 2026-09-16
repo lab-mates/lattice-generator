@@ -7,13 +7,23 @@ field = lg.sdf_field(cell, "octet", N=64, smooth=0.04)
 rho, cells = 0.30, (6, 6, 6)
 
 # A) uniform block by unit-cell instancing with seam-consistent simplification.
-#    Memory and time do not depend on the block size.  seam_spacing is in
-#    voxels: N/12 = 8 voxels ~ 0.17 mm here.
+#    Memory and time do not depend on the block size.  seam_spacing and
+#    edge_length are in mm (about 1/12 of the cell edge here).
 t0 = time.time()
-lean = lg.mesh_instanced(field, rho=rho, cells=cells, seam_spacing=field.N / 12)
+lean = lg.mesh_instanced(field, rho=rho, cells=cells, seam_spacing=0.17)
 print(f"instanced: {lean}  {time.time() - t0:.1f} s")
 print(lean.report())
 lean.export("octet_6x6x6_instanced.stl")
+
+#    remesh="decimate" replaces the isotropic interior by quadric decimation:
+#    long triangles along the straight struts, typically 3-5x fewer faces.
+t0 = time.time()
+leaner = lg.mesh_instanced(field, rho=rho, cells=cells, seam_spacing=0.17, remesh="decimate")
+print(f"instanced + decimate: {leaner}  {time.time() - t0:.1f} s")
+
+#    For strut topologies the leanest route needs no field at all (example 06):
+struts = lg.mesh_struts(cell, "octet", rho=rho, cells=cells)
+print(f"explicit struts: {struts}")
 
 # B) marching cubes on the full block (works for graded blocks too), then
 #    quadric decimation to a target edge length ~ 1 printer pixel.

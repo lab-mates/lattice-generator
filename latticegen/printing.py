@@ -88,6 +88,21 @@ def dlp_report(mesh: LatticeMesh | None = None, field: UnitField | None = None, 
                     warn(f"narrowest pore throat {pore * s:.3f} mm < {min_pore_mm} mm: "
                          f"resin drainage / cleaning will be difficult")
 
+    if field is None and mesh is not None and mesh.info.get("mode") == "struts":
+        # explicit strut mesh: sizes are known exactly from the construction
+        inf = mesh.info
+        feats = {"strut_radius": inf["strut_radius"], "node_radius": inf["node_radius"],
+                 "min_thickness": inf["min_thickness"], "max_thickness": 2 * inf["node_radius"]}
+        rep["features_mm"] = {k: v * s for k, v in feats.items()}
+        rep["features_mm"]["node_to_strut_ratio"] = inf["node_radius"] / inf["strut_radius"]
+        rep["features_mm"]["sides"] = inf["sides"]
+        thick = inf["min_thickness"]
+        rep["min_solid_px"] = thick * s / pixel_mm
+        rep["min_solid_layers"] = thick * s / layer_mm
+        if thick * s < min_feature_px * pixel_mm:
+            warn(f"thinnest solid feature {thick * s:.3f} mm = {thick * s / pixel_mm:.1f} px "
+                 f"(< {min_feature_px} px): increase rho or the cell size")
+
     if mesh is not None:
         c = mesh.check()
         rep["mesh"] = c

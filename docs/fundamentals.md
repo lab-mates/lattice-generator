@@ -155,7 +155,7 @@ Two parameters control the result:
   junctions. Too small a `sigma` for the chosen `G_max` leaves ringing:
   side-lobes of the truncated series can rise above the threshold and
   produce tiny floating blobs (the package's connectivity check detects
-  them, section 12).
+  them, section 13).
 * `G_max`, the cutoff, in units of `2 pi / a`. The built-in topologies carry
   tuned pairs (e.g. octet: `sigma = 0.06 a`, `G_max = 6.5`; kelvin: `0.07 a`,
   `5.5`).
@@ -396,7 +396,8 @@ cube edges. Two levels are offered.
   collected on the *quotient* cell, where opposite faces are identified,
   and decomposed into chains between breakpoints (vertices of degree other
   than 2, or where the set of bounding planes the vertex lies on changes).
-  Each chain is subsampled greedily at arc spacing `h`. Because the
+  Each chain is subsampled greedily at arc spacing `h` (given in the cell
+  length unit and converted to voxels internally). Because the
   decision is made once per quotient vertex, the body, the caps and all
   periodic partners inherit identical keep/drop choices, so they still
   match after replication. Dropped seam vertices are collapsed along their
@@ -414,7 +415,101 @@ interface and the interior remesh smooths slightly, so the volume drops by
 an `O(h^2)` amount. `mesh_instanced` measures the simplified unit-cell
 density and iterates the isovalue (secant) until it matches the target.
 
-## 11. Simplification, remeshing and repair
+Isotropic remeshing keeps a ring of vertices every edge length along every
+strut, although a straight tube carries no information between its ends.
+`remesh="decimate"` replaces the interior remesh by quadric edge collapse
+(Garland-Heckbert) with a low triangle-quality bound, so triangles are free
+to stretch along the struts; the face budget is that of the isotropic mesh
+divided by `anisotropy` (default 4). The seams are protected by a very
+large boundary weight rather than by a selection, because pymeshlab's
+selected-only collapse loses its selection as it proceeds and stalls far
+above the target; the canonical key set of the boundary is verified
+unchanged afterwards. On a 1 mm octet at 20 % with 0.05 mm seams this
+gives ~1 350 faces per cell instead of ~6 500.
+
+## 11. Explicit strut meshes: prisms and hull nodes
+
+Every field-based route spends triangles in proportion to surface area
+over voxel size squared, and remeshing can at best bring that to about one
+triangle per (edge length)^2 of surface. Neither exploits the one thing a
+strut lattice is made of: straight cylinders. A cylinder is fully described
+by two end rings; nothing between them needs a vertex. `mesh_struts`
+therefore builds the solid directly from the skeleton (section 3), with no
+field, no marching cubes and no welding.
+
+**Prisms.** A strut of radius `r` becomes a regular `n`-gon prism (`sides`,
+default 6): two rings of `n` vertices and `2n` triangles, whatever its
+length. `r` is the circumradius of the polygon; the thinnest dimension is
+`2 r cos(pi/n)` (0.87 of the diameter for a hexagon, 0.71 for a square).
+Both rings of a strut use the same orthonormal frame, so the prism is not
+twisted.
+
+**Pull-back.** Two cylinders of radius `r` whose axes meet at an angle
+`theta` overlap up to a distance `r cot(theta/2)` from the node along each
+axis. The rings are therefore placed at
+
+    d = 1.02 r / tan(theta_min / 2)
+
+from the node centre, `theta_min` being the smallest angle between struts
+meeting there (octet: 60 degrees, `d = 1.73 r`; bcc: 70.5 degrees,
+`1.41 r`; simple cubic: 90 degrees, `r`). A vertex of a neighbouring ring
+projects onto the axis at most `d cos(theta) + r sin(theta)`, which is at
+most `d` exactly when `d >= r cot(theta/2)`: with this pull-back every ring
+plane is a supporting plane of the set of all rings of the node.
+
+**Hull nodes.** The node is the convex hull of its rings (12 x 6 = 72
+points for an octet node). Because each ring plane supports the point set,
+the ring polygon appears as one facet of the hull; that facet is removed
+and the prism attaches to the opening, using the same vertex indices. The
+remaining hull triangles are the node's skin: `2 k n - 4 - k (n - 2)` of
+them for `k` struts (92 for the octet node), with the outer vertices at
+`sqrt(d^2 + r^2)` from the centre, i.e. `2.0 r` for the octet and less than
+the `2.3 r` of a filleted distance field at `smooth = 0.02 a`. An octet
+cell costs `4 x 92 + 24 x 12 = 656` triangles; a marching-cubes cell at
+`N = 80` costs about 120 000. Nodes whose incident rings are identical up to
+translation share one hull computation, so a 20 x 20 x 20 block (34 000
+nodes) needs a handful of hulls. A node with a single strut (a strut that
+reaches the block boundary and stops, as bcc corners do) is closed by a
+flat `n`-gon cap.
+
+Vertices are shared by index between prisms and hulls, so the mesh is
+watertight by construction and no welding or tolerance is involved.
+
+**Density.** The solid volume of one period is in closed form:
+
+    V(r) = sum_struts A_n(r) (L - d_a - d_b) + sum_nodes V_hull(r)
+         = alpha r^2 - beta r^3,       A_n(r) = (n/2) r^2 sin(2 pi / n)
+
+because `d` and the hull scale linearly with `r`. The strut radius for a
+bulk density `rho` is the root of `V(r) / V_cell = rho`, found by
+bracketing in microseconds; no meshing or calibration loop is needed and
+the meshed volume equals the formula to float32 rounding. The formula, and
+the mesh, are valid while primitives that share no node stay apart:
+`r_max` is the smallest of half the nearest node distance over
+`sqrt(d1^2 + 1)`, the node to non-incident strut distance over
+`sqrt(d1^2 + 1) + 1`, half the nearest non-adjacent strut distance, and the
+radius at which `d_a + d_b` reaches a strut length (`d1 = d / r`). For the
+octet this is `r = 0.174 a`, a bulk density of 0.79; higher values raise a
+`ValueError` (fcc + bcc combined, whose struts pass close to each other,
+tops out at 0.20).
+
+**Block boundary.** The block keeps every strut whose two nodes lie in the
+closed box `[0, n a]^3`: surface nodes are complete and there are no half
+struts, so the part is about `2 r` larger than `n a` and its relative
+density is a little above `rho` (extra boundary struts; 3 % on a 20-cell
+block, 30 % on a 2-cell one). The field meshers instead cut the solid at
+the box faces.
+
+**Rounded nodes.** `node="round"` adds a sampled sphere of radius
+`sqrt(d^2 + r^2)` to the hull input (points that would lie beyond a ring
+plane are dropped so the openings survive): the node becomes a rounded
+convex bulge. What a convex hull cannot make is a *concave* fillet in the
+valley between two struts, the shape the smooth-minimum distance field
+produces; the hull bridges that valley with a flat web. For struts of a
+few pixels the difference is below one pixel; for thick struts where the
+fillet matters, use `sdf_field(..., smooth=k)` with `mesh_instanced`.
+
+## 12. Simplification, remeshing and repair
 
 For graded or mixed blocks, or for a block that has already been built,
 three standard mesh operations are provided through `pymeshlab`
@@ -441,7 +536,7 @@ three standard mesh operations are provided through `pymeshlab`
   flipped if its signed volume is negative. **Island removal** drops
   disconnected components below a size or volume fraction.
 
-## 12. Feature sizes and connectivity
+## 13. Feature sizes and connectivity
 
 Two questions decide whether a lattice prints: are the solid features thick
 enough, and does everything hang together? `UnitField.feature_sizes` and
@@ -462,7 +557,7 @@ enough, and does everything hang together? `UnitField.feature_sizes` and
   A printable lattice needs one percolating solid, no floating islands and
   no enclosed voids; a sheet TPMS legitimately reports two void labyrinths.
 
-## 13. DLP printing considerations
+## 14. DLP printing considerations
 
 A DLP printer cures resin one layer at a time with a projected image, so
 the part is quantised laterally to the **pixel pitch** (typically 20 to
@@ -505,23 +600,26 @@ following are the practical rules the report in `dlp_report` encodes.
   part. Uniform strut sections (sharp distance-field unions, or Fourier
   fields with node compensation) shrink more evenly than bulged nodes.
 
-## 14. Choosing between the methods
+## 15. Choosing between the methods
 
-| | Fourier synthesis | distance field | TPMS |
-|---|---|---|---|
-| geometry | smooth, organic tubes; blended junctions | exact cylinders, sharp or filleted unions | curved walls or labyrinths |
-| strut radius | set by threshold, not known in closed form | known exactly (`-t`) | wall thickness from EDT |
-| junction bulge | large; fix with `node_comp` | small (sharp) to large (smooth) | none |
-| ringing / artefacts | possible at small `sigma` or strong `node_comp` | none | none |
-| cost at N = 96 | milliseconds (FFT) | seconds | milliseconds |
-| general cells | yes | yes | stretched |
-| best for | organic-looking parts, very fast iteration, heterogeneous blends | engineering trusses, pyrolysis, FEA comparison | bone scaffolds, heat exchangers, drainage-critical parts |
+| | Fourier synthesis | distance field | TPMS | explicit struts |
+|---|---|---|---|---|
+| geometry | smooth, organic tubes; blended junctions | exact cylinders, sharp or filleted unions | curved walls or labyrinths | n-gon prisms, convex polyhedral nodes |
+| strut radius | set by threshold, not known in closed form | known exactly (`-t`) | wall thickness from EDT | known exactly (input, or closed form from rho) |
+| junction bulge | large; fix with `node_comp` | small (sharp) to large (smooth) | none | node vertices at ~2 r; convex only, no fillets |
+| ringing / artefacts | possible at small `sigma` or strong `node_comp` | none | none | none |
+| cost at N = 96 | milliseconds (FFT) | seconds | milliseconds | no grid; ~20 us per strut |
+| triangles per octet cell | ~1 per px^2 after remeshing (~6 000) | same | same | 656 |
+| general cells | yes | yes | stretched | yes |
+| best for | organic-looking parts, very fast iteration, heterogeneous blends | engineering trusses with fillets, graded blocks, FEA comparison | bone scaffolds, heat exchangers, drainage-critical parts | large uniform truss blocks, thin struts, slicer-friendly files |
 
-For DLP work the distance field with a small fillet (`smooth` around 0.1
-to 0.3 of the strut radius) is a sound default for trusses, and the sheet
-gyroid for TPMS.
+For DLP work the explicit strut mesh is the default for uniform truss
+blocks (it is the only route whose file size stays practical for
+thousands of cells); the distance field with a small fillet (`smooth`
+around 0.1 to 0.3 of the strut radius) is the choice when fillets or
+gradation matter, and the sheet gyroid for TPMS.
 
-## 15. References
+## 16. References
 
 * Ashcroft and Mermin, *Solid State Physics*, ch. 4 to 6 (Bravais and
   reciprocal lattices, structure factor).

@@ -4,6 +4,7 @@ Command-line interface::
     python -m latticegen build octet --method sdf --a 2 --rho 0.3 --cells 5 5 5 -o octet.stl
     python -m latticegen build gyroid --method tpms --sheet --a 3 --rho 0.25 --cells 4 4 4 -o gyr.stl
     python -m latticegen build bcc --graded 0.15 0.40 --cells 4 4 8 -o graded.stl
+    python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 -o cube.stl
     python -m latticegen list
     python -m latticegen check part.stl --pixel 0.05 --layer 0.05
     python -m latticegen simplify part.stl --edge-length 0.05 -o part_lean.stl
@@ -24,8 +25,25 @@ def _build(args):
     cell = lg.UnitCell.cubic(args.a) if args.cell is None else lg.UnitCell.from_parameters(*args.cell)
     N = args.N if args.N else lg.recommend_grid(cell, args.pixel)
     method = args.method
+    cells = tuple(args.cells)
     if method == "auto":
         method = "tpms" if args.topology.lower() in lg.available_tpms() else "sdf"
+    if method == "struts":
+        # explicit prisms + hull nodes: no field, no marching cubes
+        if args.graded is not None or args.instanced:
+            raise SystemExit("--method struts takes neither --graded nor --instanced")
+        mesh = lg.mesh_struts(cell, args.topology, rho=args.rho, cells=cells, sides=args.sides,
+                              node=args.node, verbose=args.verbose)
+        print(f"mesh: {mesh}  ({time.time() - t_start:.1f} s)")
+        if args.repair:
+            mesh = mesh.repair(verbose=True)
+        print(mesh.report())
+        if args.check:
+            print(lg.format_report(lg.dlp_report(mesh, pixel_mm=args.pixel, layer_mm=args.layer)))
+        out = args.output or f"{args.topology}_{'x'.join(map(str, cells))}.stl"
+        mesh.export(out)
+        print(f"written {out}  ({time.time() - t_start:.1f} s total)")
+        return
     if method == "sdf":
         field = lg.sdf_field(cell, args.topology, N=N, smooth=args.smooth * cell.a_min)
     elif method == "fourier":
@@ -36,7 +54,6 @@ def _build(args):
         raise SystemExit(f"unknown method {method}")
     print(f"field: {field}  ({time.time() - t_start:.1f} s)")
 
-    cells = tuple(args.cells)
     if args.graded is not None:
         r0, r1 = args.graded
         rho = lambda z: r0 + (r1 - r0) * z
@@ -48,12 +65,14 @@ def _build(args):
         if args.graded is not None:
             raise SystemExit("--instanced needs a uniform density (no --graded)")
         spacing = args.seam_spacing if args.seam_spacing else None
-        mesh = lg.mesh_instanced(field, rho=rho, cells=cells, seam_spacing=spacing, verbose=args.verbose)
+        edge = args.edge_length if args.edge_length else None
+        mesh = lg.mesh_instanced(field, rho=rho, cells=cells, seam_spacing=spacing,
+                                 edge_length=edge, remesh=args.remesh, verbose=args.verbose)
     else:
         mesh = lg.mesh_stack(field, rho=rho, cells=cells, verbose=args.verbose)
     print(f"mesh: {mesh}  ({time.time() - t_start:.1f} s)")
 
-    if args.edge_length:
+    if args.edge_length and not args.instanced:
         mesh = mesh.simplify(edge_length=args.edge_length, verbose=True)
     if args.repair:
         mesh = mesh.repair(verbose=True)
@@ -105,7 +124,8 @@ def main(argv=None):
 
     b = sub.add_parser("build", help="generate a lattice block and write a mesh")
     b.add_argument("topology", help="strut topology (octet, bcc, ...) or TPMS name (gyroid, ...)")
-    b.add_argument("--method", default="auto", choices=["auto", "sdf", "fourier", "tpms"])
+    b.add_argument("--method", default="auto", choices=["auto", "sdf", "fourier", "tpms", "struts"],
+                   help="field type, or 'struts' for explicit prisms + hull nodes (leanest)")
     b.add_argument("--a", type=float, default=1.0, help="cubic cell edge (mm)")
     b.add_argument("--cell", type=float, nargs=6, metavar=("A", "B", "C", "ALPHA", "BETA", "GAMMA"),
                    help="general cell parameters instead of --a")
@@ -119,8 +139,16 @@ def main(argv=None):
     b.add_argument("--sheet", action="store_true", help="TPMS sheet solid instead of network")
     b.add_argument("--instanced", action="store_true", help="unit-cell instancing (uniform blocks)")
     b.add_argument("--seam-spacing", type=float, default=0.0,
-                   help="instanced: seam subsampling in voxels (e.g. N/12); 0 = frozen seams")
-    b.add_argument("--edge-length", type=float, default=0.0, help="simplify to this edge length (mm)")
+                   help="instanced: seam subsampling arc length in mm (e.g. a/12); 0 = frozen seams")
+    b.add_argument("--edge-length", type=float, default=0.0,
+                   help="target triangle edge in mm: decimation target, or the interior "
+                        "remesh target with --instanced")
+    b.add_argument("--remesh", default="isotropic", choices=["isotropic", "decimate"],
+                   help="instanced: interior remesh (uniform triangles) or quadric decimation "
+                        "(long triangles along struts, fewer faces)")
+    b.add_argument("--sides", type=int, default=6, help="struts: polygon sides of the strut section")
+    b.add_argument("--node", default="hull", choices=["hull", "round"],
+                   help="struts: node shape (convex hull of the strut rings, or rounded)")
     b.add_argument("--repair", action="store_true")
     b.add_argument("--check", action="store_true", help="print the DLP printability report")
     b.add_argument("--pixel", type=float, default=0.05, help="DLP pixel pitch (mm)")

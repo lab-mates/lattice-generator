@@ -14,14 +14,15 @@ Contents
 6. [Meshing a block](#6-meshing-a-block)
 7. [Graded and mixed blocks](#7-graded-and-mixed-blocks)
 8. [Lean meshes: instancing](#8-lean-meshes-instancing)
-9. [Simplification, remeshing, repair](#9-simplification-remeshing-repair)
-10. [Diagnostics and the DLP report](#10-diagnostics-and-the-dlp-report)
-11. [Export and import](#11-export-and-import)
-12. [Command-line interface](#12-command-line-interface)
-13. [Recipes](#13-recipes)
-14. [Performance and memory](#14-performance-and-memory)
-15. [Troubleshooting](#15-troubleshooting)
-16. [API summary](#16-api-summary)
+9. [Lean meshes: explicit struts](#9-lean-meshes-explicit-struts)
+10. [Simplification, remeshing, repair](#10-simplification-remeshing-repair)
+11. [Diagnostics and the DLP report](#11-diagnostics-and-the-dlp-report)
+12. [Export and import](#12-export-and-import)
+13. [Command-line interface](#13-command-line-interface)
+14. [Recipes](#14-recipes)
+15. [Performance and memory](#15-performance-and-memory)
+16. [Troubleshooting](#16-troubleshooting)
+17. [API summary](#17-api-summary)
 
 ---
 
@@ -59,7 +60,8 @@ N = lg.recommend_grid(cell, pixel_mm=0.05)
 field = lg.sdf_field(cell, "octet", N=N, smooth=0.04)
 
 # 3. mesh a 3 x 3 x 3 block at 30 % relative density
-#    (for large uniform blocks use lg.mesh_instanced, section 8)
+#    (for large uniform blocks use lg.mesh_instanced, section 8, or the
+#    field-free lg.mesh_struts, section 9)
 mesh = lg.mesh_stack(field, rho=0.30, cells=(3, 3, 3))
 print(mesh.report())
 
@@ -180,7 +182,7 @@ f = lg.fourier_field(cell, cross, N=64, sigma=0.18, gmax=4.5)    # custom skelet
   `2 max|hkl|`; a `ValueError` tells you the minimum.
 * `node_comp`: junction de-bulking strength, 0.5 is a good value for
   12-connected nodes at densities of 20 % and above. Check
-  `connectivity_check` afterwards (section 10): strong compensation or
+  `connectivity_check` afterwards (section 11): strong compensation or
   small `sigma` can leave floating blobs.
 * `weights`: per-strut weights (thicker / thinner struts in one cell).
 * `f.meta` holds `hkl`, the coefficients `c`, and the parameters used.
@@ -274,19 +276,46 @@ simplifies it consistently, replicates and welds. Time and memory do not
 grow with the block.
 
 ```python
-lean = lg.mesh_instanced(field, rho=0.30, cells=(8, 8, 8), seam_spacing=field.N / 12)
+lean = lg.mesh_instanced(field, rho=0.30, cells=(8, 8, 8), seam_spacing=0.17)   # mm
 ```
 
-`mesh_instanced(field, rho, cells, seam_spacing=None, edge_length=None, remesh="isotropic", density_correct=True, exact_density=True, verbose=False)`
+`mesh_instanced(field, rho, cells, seam_spacing=None, edge_length=None, remesh="isotropic", density_correct=True, exact_density=True, anisotropy=4.0, quality_thr=0.1, verbose=False)`
 
-* `seam_spacing` (voxels): subsample the seam curves at this arc spacing and
-  remesh interiors and caps at `edge_length` (default: same). `N/16` to
-  `N/8` is the useful range: `N/12` on a 2 mm cell at `N = 96` gives
-  triangles of about 0.17 mm. The strongest, most uniform simplification.
-* `seam_spacing=None` keeps seams at marching density and remeshes the
-  interior only (`remesh="isotropic"` or `"decimate"`); `remesh=None` gives
-  raw instancing (no pymeshlab needed, same triangle count as `mesh_stack`
-  but far less memory).
+All lengths are in the cell unit (mm), like everywhere else in the API;
+values below one voxel raise an error because they almost always mean a
+unit mix-up.
+
+* `seam_spacing` (mm): subsample the seam curves (periodic face loops, cap
+  rims, cube-edge chains) at this arc spacing and remesh the interiors of
+  body and caps at `edge_length`, which defaults to the same value. The
+  useful range is 1/16 to 1/8 of the cell edge: 0.17 mm on a 2 mm cell.
+  The strongest, most uniform simplification.
+* `edge_length` (mm): triangle size of the interior remesh. Give it alone
+  (with `seam_spacing=None`) to keep the seams at marching-cubes density
+  and remesh only the interiors to that size; give both to make the seams
+  coarser or finer than the interiors.
+* `seam_spacing=None, edge_length=None` remeshes the interior at pymeshlab's
+  default (1 % of the bounding box) with `remesh="isotropic"`, or decimates
+  it with `remesh="decimate"`; `remesh=None` gives raw instancing (no
+  pymeshlab needed, same triangle count as `mesh_stack` but far less
+  memory).
+
+| call | seams | interiors |
+|---|---|---|
+| `mesh_instanced(f, ...)` | marching density | isotropic, 1 % of bbox |
+| `mesh_instanced(f, ..., edge_length=0.1)` | marching density | isotropic, 0.1 mm |
+| `mesh_instanced(f, ..., seam_spacing=0.17)` | 0.17 mm | 0.17 mm |
+| `mesh_instanced(f, ..., seam_spacing=0.17, edge_length=0.1)` | 0.17 mm | 0.1 mm |
+| `mesh_instanced(f, ..., seam_spacing=0.17, remesh="decimate")` | 0.17 mm | quadric decimation, ~1/4 of the isotropic face count |
+| `mesh_instanced(f, ..., remesh=None)` | marching density | marching density |
+
+* `remesh="decimate"` (with `seam_spacing`): instead of uniform triangles,
+  quadric edge collapse with a low quality bound (`quality_thr`, default
+  0.1) so triangles stretch along straight struts; the face budget is the
+  isotropic estimate divided by `anisotropy` (default 4). Typically 3-5x
+  fewer faces than isotropic at the same seams. Values of `anisotropy`
+  much above 4 change the volume enough that the density correction may
+  not fully converge; check `mesh.relative_density`.
 * `density_correct`: after simplification the unit-cell volume is measured
   and the isovalue is iterated until the density matches `rho` (default on).
 
@@ -295,10 +324,66 @@ Comparison on a 6 x 6 x 6 octet block, 2 mm cell, `N = 96`, 30 %:
 | method | faces | time |
 |---|---|---|
 | `mesh_stack` (marching cubes) | ~20 M | not attempted (RAM) |
-| `mesh_instanced(seam_spacing=8)` | 0.70 M | 18 s |
+| `mesh_instanced(seam_spacing=0.17)` | 0.70 M | 18 s |
 | `mesh_stack` 3 x 3 x 3 then `simplify(edge_length=0.05)` | 4.5 M -> 0.61 M | 3 s + 95 s |
 
-## 9. Simplification, remeshing, repair
+On a 1 mm octet at 20 %, `N = 80`, seams and interiors at 0.05 mm, 3 x 3 x 3:
+`remesh="isotropic"` 176 k faces (6 500 per cell), `remesh="decimate"`
+36 k faces (1 350 per cell); the explicit strut mesh of the next section
+is 660 per cell.
+
+## 9. Lean meshes: explicit struts
+
+For strut topologies the leanest mesh needs no field at all: every strut
+is an n-gon prism (two rings, `2n` triangles whatever its length) and every
+node is the convex hull of the rings of the struts meeting there. The
+maths is in [fundamentals, section 11](fundamentals.md#11-explicit-strut-meshes-prisms-and-hull-nodes).
+
+```python
+cube = lg.mesh_struts(lg.UnitCell.cubic(1.0), "octet", rho=0.20, cells=(20, 20, 20))
+cube.export("octet_2cm.stl")               # 5.4 M faces, 270 MB, ~5 s, ~0.6 GB RAM
+print(lg.format_report(lg.dlp_report(cube, pixel_mm=0.05)))   # sizes come from the mesh itself
+```
+
+`mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6, node="hull", round_points=64, verbose=False)`
+
+* `topology`: a built-in name or a `Skeleton` (isolated `points` are
+  ignored). Any `UnitCell`.
+* `rho`: **bulk** relative density of the periodic lattice; the strut
+  radius is solved from the closed-form volume `V(r) = alpha r^2 - beta r^3`
+  (`lg.radius_for_density(cell, topology, rho)` gives it alone). Or give
+  `radius` (mm) directly. Unreachable densities (struts vanishing into the
+  nodes) raise a `ValueError` naming the maximum.
+* `sides`: polygon of the strut section. `r` is the circumradius; the
+  thinnest dimension is `2 r cos(pi/sides)`. With struts of one or two
+  pixels 4 to 6 sides are indistinguishable in print; 8 to 12 for thick
+  struts.
+* `node="hull"` (default): convex hull of the rings, node vertices at
+  about `2 r` for the octet. `node="round"`: a sampled sphere is added to
+  the hull (rounded convex bulge, ~+50 % faces). Neither produces concave
+  fillets; for those use `sdf_field(..., smooth=k)` and `mesh_instanced`.
+* Boundary: every strut whose two nodes lie inside the closed block is
+  kept whole, so the outer faces carry complete nodes, the part is about
+  `2 r` larger than `n a`, and `mesh.relative_density` (volume over the
+  nominal box) sits a little above `rho`: +3 % on 20 cells, +30 % on 2.
+  Struts that end at the block boundary with no partner (bcc and diamond
+  corners) are closed with a flat cap.
+* The result is watertight by construction (shared vertex indices, no
+  welding) and `mesh.info` holds `strut_radius`, `node_radius`,
+  `min_thickness`, `sides`, `n_struts`, `n_nodes`, `bulk_density`,
+  `analytic_volume`; `dlp_report(mesh)` reads them without a field.
+
+Triangles per cell (bulk): octet 656 with hexagons, 464 with squares;
+bcc 8 x 2n + 2 hulls ~ 250; sc ~ 100. A 20 x 20 x 20 octet block is 5.4 M
+faces (270 MB STL), against ~50 M for `mesh_instanced` at 0.05 mm
+triangles and ~1000 M for raw marching cubes at `N = 80`.
+
+What you give up: fillets and organic blends (convex nodes only),
+gradation (uniform radius; per-strut radii are a possible extension), and
+TPMS / Fourier geometries, which have no straight parts and stay on the
+field route.
+
+## 10. Simplification, remeshing, repair
 
 All are methods of `LatticeMesh` (and functions in `latticegen.remesh`) and
 return a **new** mesh. They need pymeshlab.
@@ -325,7 +410,7 @@ Guidance:
   decimation; it also fills small holes and re-orients faces outward.
 * All functions warn when a watertight input comes out with open edges.
 
-## 10. Diagnostics and the DLP report
+## 11. Diagnostics and the DLP report
 
 ```python
 mesh.check()          # dict: n_vertices, n_faces, watertight, volume, area, components,
@@ -352,7 +437,7 @@ solid pieces and enclosed voids in the unit cell, non-watertight or
 inverted meshes, disconnected components, over-fine triangulation, and
 more than 5 M faces. Either argument (`mesh`, `field`) may be omitted.
 
-## 11. Export and import
+## 12. Export and import
 
 ```python
 mesh.export("part.stl")              # streamed binary STL, any size
@@ -365,28 +450,33 @@ field.save("octet_N96.npz"); field = lg.UnitField.load("octet_N96.npz")
 Geometry helpers: `mesh.scaled(f)`, `mesh.translated(v)`, `mesh.flipped()`,
 `mesh.weld()`, `mesh.copy()`.
 
-## 12. Command-line interface
+## 13. Command-line interface
 
 ```bash
 python -m latticegen list
 python -m latticegen build octet --a 2 --rho 0.3 --cells 5 5 5 --smooth 0.02 --check -o octet.stl
 python -m latticegen build gyroid --sheet --a 3 --rho 0.25 --cells 4 4 4 -o gyroid_sheet.stl
 python -m latticegen build bcc --graded 0.15 0.40 --a 2 --cells 4 4 8 -o bcc_graded.stl
-python -m latticegen build octet --a 2 --rho 0.3 --cells 8 8 8 --instanced --seam-spacing 8 -o lean.stl
+python -m latticegen build octet --a 2 --rho 0.3 --cells 8 8 8 --instanced --seam-spacing 0.17 -o lean.stl
 python -m latticegen build octet --method fourier --node-comp 0.5 --a 2 --cells 3 3 3 --edge-length 0.05 -o f.stl
+python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 --check -o cube.stl
+python -m latticegen build octet --a 2 --rho 0.3 --cells 8 8 8 --instanced --seam-spacing 0.17 --remesh decimate -o leaner.stl
 python -m latticegen simplify part.stl --edge-length 0.05 -o part_lean.stl
 python -m latticegen check part_lean.stl --pixel 0.05 --layer 0.05
 ```
 
-`build` options: `--method {auto,sdf,fourier,tpms}` (auto picks tpms for
-TPMS names, sdf otherwise), `--a` or `--cell A B C ALPHA BETA GAMMA`, `--N`
+`build` options: `--method {auto,sdf,fourier,tpms,struts}` (auto picks tpms
+for TPMS names, sdf otherwise; `struts` builds explicit prisms and hull
+nodes, section 9), `--a` or `--cell A B C ALPHA BETA GAMMA`, `--N`
 (default from `--pixel` via `recommend_grid`), `--rho`, `--graded LO HI`,
 `--cells NX NY NZ`, `--smooth` (fraction of `a`), `--node-comp`, `--sheet`,
-`--instanced`, `--seam-spacing` (voxels), `--edge-length` (mm, decimation),
-`--repair`, `--check`, `--pixel`, `--layer`, `-o`, `-v`. If the package is
+`--instanced`, `--seam-spacing` (mm), `--edge-length` (mm: decimation target, or the
+interior remesh target with `--instanced`), `--remesh {isotropic,decimate}`
+(interior treatment with `--instanced`), `--sides` and `--node {hull,round}`
+(with `--method struts`), `--repair`, `--check`, `--pixel`, `--layer`, `-o`, `-v`. If the package is
 `pip install`ed, `latticegen` is also available as a console command.
 
-## 13. Recipes
+## 14. Recipes
 
 **Choose N for a printer.** `N = lg.recommend_grid(cell, pixel_mm)`; for a
 2 mm cell and 50 um pixels that is 80. Above ~128 the field arrays (N^3
@@ -421,7 +511,20 @@ a sandwich (caps are only where the lattice is solid); instead grade with
 `mesh_instanced` where the block is uniform, decimate the rest, and keep
 `verbose=True` to log densities and face counts.
 
-## 14. Performance and memory
+**A 2 cm cube of 1 mm octet cells for DLP.** 8000 cells with 0.13 mm struts:
+build it as explicit struts, never as a field.
+
+```python
+cell = lg.UnitCell.cubic(1.0)
+cube = lg.mesh_struts(cell, "octet", rho=0.20, cells=(20, 20, 20), sides=6)
+print(lg.format_report(lg.dlp_report(cube, pixel_mm=0.05, layer_mm=0.05)))
+cube.export("octet_2cm.stl")            # 5.4 M faces; sides=4 gives 3.8 M
+```
+
+If the slicer still struggles, `sides=4`, or split the cube into two
+`(20, 20, 10)` halves and print them as separate parts.
+
+## 15. Performance and memory
 
 Measured on 8 cores, `N = 96`, 2 mm octet cell:
 
@@ -431,8 +534,10 @@ Measured on 8 cores, `N = 96`, 2 mm octet cell:
 | distance field, sharp | 3.4 s |
 | distance field, `smooth=0.02` | 4.6 s |
 | `mesh_stack` 3 x 3 x 3 (4.5 M faces) | 3.4 s |
-| `mesh_instanced` 6 x 6 x 6, `seam_spacing=8` (0.7 M faces) | 18 s |
+| `mesh_instanced` 6 x 6 x 6, `seam_spacing=0.17` (0.7 M faces) | 18 s |
 | `simplify(edge_length=0.05)` on 4.5 M faces | 95 s |
+| `mesh_instanced` 3 x 3 x 3, 1 mm octet, `N = 80`, seams 0.05 mm, `remesh="decimate"` (36 k faces) | 6 s |
+| `mesh_struts` 20 x 20 x 20, 1 mm octet (5.4 M faces, 270 MB STL) | 5 s |
 
 Memory rules of thumb:
 
@@ -444,8 +549,13 @@ Memory rules of thumb:
 * `slab_cells=1` keeps the working field array to `(nx N)(ny N)(N) x 4`
   bytes; the assembled mesh dominates anyway.
 * pymeshlab decimation needs roughly 1 GB per 5 M input faces.
+* `mesh_struts` holds only the rings and hull triangles (~660 faces per
+  octet cell): building and exporting a 20 x 20 x 20 block peaks at about
+  0.6 GB. `mesh.report()` / `dlp_report()` on 5 M faces (edge statistics,
+  components, Euler number) add roughly 1 GB on top; skip them for very
+  large blocks or run them on a small block of the same lattice.
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 | symptom | cause and fix |
 |---|---|
@@ -460,7 +570,7 @@ Memory rules of thumb:
 | struts look faceted in the slicer preview | voxel coarser than the pixel; use `recommend_grid`. |
 | Kelvin / small-strut Fourier fields look blobby | short struts need larger `sigma` relative to the cutoff; the defaults (`0.07 a`, `gmax 5.5`) are blob-free from 10 % to 40 %, tune from there. |
 
-## 16. API summary
+## 17. API summary
 
 ```
 latticegen
@@ -478,7 +588,9 @@ latticegen
 │     .threshold() .calibrated_threshold() .density() .solid_mask() .strut_radius()
 │     .feature_sizes() .connectivity_check() .phase_components() .mesh() .mesh_instanced() .save() .load()
 ├── mesh_stack(fields, rho, cells, cell_map, slab_cells, exact_density, threshold, verbose)
-├── mesh_instanced(field, rho, cells, seam_spacing, edge_length, remesh, density_correct, exact_density, verbose)
+├── mesh_instanced(field, rho, cells, seam_spacing, edge_length, remesh, density_correct, exact_density, anisotropy, quality_thr, verbose)
+├── mesh_struts(cell, topology, rho, radius, cells, sides, node, round_points, verbose), radius_for_density(cell, topology, rho, sides, node)
+├── struts.{bulk_volume_coefficients, polygon_area}
 ├── LatticeMesh(verts, faces, info)
 │     .n_vertices .n_faces .bounds .extents .volume .area .is_watertight .euler_number .relative_density
 │     .edge_lengths() .components() .check() .report()

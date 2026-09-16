@@ -252,11 +252,36 @@ class TestRemeshAndInstanced(unittest.TestCase):
         self.assertGreater(rep.volume, 0)
 
     def test_instanced_seam_simplified(self):
-        m = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), seam_spacing=N / 12)
+        m = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), seam_spacing=0.08)  # mm, ~N/12 voxels
         self.assertTrue(m.is_watertight)
         self.assertEqual(m.components()[1], 1)
         self.assertAlmostEqual(m.relative_density, 0.3, delta=3e-3)
         self.assertLess(m.n_faces, 0.5 * self.mesh.n_faces)
+        # coarser seams than interiors
+        m2 = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), seam_spacing=0.12, edge_length=0.06)
+        self.assertTrue(m2.is_watertight)
+        self.assertGreater(m2.n_faces, m.n_faces * 0.8)
+        # sub-voxel lengths are a unit mix-up
+        with self.assertRaises(ValueError):
+            lg.mesh_instanced(self.fld, rho=0.3, cells=(1, 1, 1), seam_spacing=0.001)
+
+    def test_instanced_decimate_interior(self):
+        iso = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), seam_spacing=0.08, edge_length=0.06)
+        dec = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), seam_spacing=0.08, edge_length=0.06,
+                                remesh="decimate")
+        self.assertTrue(dec.is_watertight)
+        self.assertEqual(dec.components()[1], 1)
+        self.assertAlmostEqual(dec.relative_density, 0.3, delta=3e-3)
+        self.assertLess(dec.n_faces, 0.6 * iso.n_faces)
+        self.assertEqual(dec.info["remesh"], "decimate")
+
+    def test_instanced_edge_length_alone(self):
+        # frozen seams, interior remeshed at the requested size
+        m = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), edge_length=0.1)
+        self.assertTrue(m.is_watertight)
+        self.assertAlmostEqual(m.relative_density, 0.3, delta=3e-3)
+        default = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2))
+        self.assertLess(m.n_faces, default.n_faces)
 
     def test_instanced_frozen_and_raw(self):
         m = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2))
@@ -265,6 +290,80 @@ class TestRemeshAndInstanced(unittest.TestCase):
         raw = lg.mesh_instanced(self.fld, rho=0.3, cells=(2, 2, 2), remesh=None)
         self.assertTrue(raw.is_watertight)
         self.assertAlmostEqual(raw.volume, self.mesh.volume, delta=0.01 * self.mesh.volume)
+
+
+class TestStruts(unittest.TestCase):
+    """Explicit prism + hull-node mesher (no field, no pymeshlab)."""
+
+    def test_octet_exact(self):
+        m = lg.mesh_struts(1.0, "octet", rho=0.2, cells=(2, 2, 2))
+        self.assertTrue(m.is_watertight)
+        self.assertEqual(m.components()[1], 1)
+        self.assertGreater(m.volume, 0)
+        # mesh volume equals the closed-form volume of prisms + hulls
+        self.assertAlmostEqual(m.volume, m.info["analytic_volume"], delta=1e-5 * m.volume)
+        # whole struts at the boundary add material: block density above the bulk value
+        self.assertGreater(m.relative_density, 0.2)
+        self.assertLess(m.relative_density, 0.3)
+        self.assertLess(m.n_faces, 900 * 8)                    # ~660 per bulk cell
+        self.assertEqual(m.info["mode"], "struts")
+        self.assertAlmostEqual(m.info["min_thickness"], 2 * m.info["strut_radius"] * np.cos(np.pi / 6))
+
+    def test_bulk_density_calibration(self):
+        # V(r) = alpha r^2 - beta r^3 evaluated at the calibrated radius gives rho
+        for topo, rho in (("octet", 0.2), ("bcc", 0.1), ("kelvin", 0.2)):
+            r = lg.radius_for_density(1.0, topo, rho)
+            a, b, r_max = lg.struts.bulk_volume_coefficients(1.0, topo)
+            self.assertAlmostEqual(a * r * r - b * r ** 3, rho, places=9)
+            self.assertLess(r, r_max)
+        # the SDF strut radius of the sharp union is in the same range (polygon vs circle, hull nodes)
+        r_sdf = lg.sdf_field(1.0, "octet", N=N).strut_radius(0.2)
+        self.assertAlmostEqual(lg.radius_for_density(1.0, "octet", 0.2), r_sdf, delta=0.25 * r_sdf)
+
+    def test_all_topologies_and_options(self):
+        for topo in lg.available_topologies():
+            m = lg.mesh_struts(1.0, topo, rho=0.15, cells=(2, 2, 2))
+            self.assertTrue(m.is_watertight, topo)
+            self.assertEqual(m.components()[1], 1, topo)
+            self.assertAlmostEqual(m.volume, m.info["analytic_volume"], delta=1e-5 * m.volume)
+        hull = lg.mesh_struts(2.0, "octet", rho=0.2, cells=(1, 1, 1), sides=4)
+        rnd = lg.mesh_struts(2.0, "octet", rho=0.2, cells=(1, 1, 1), sides=4, node="round")
+        oct8 = lg.mesh_struts(2.0, "octet", radius=0.12, cells=(1, 1, 1), sides=8)
+        for m in (hull, rnd, oct8):
+            self.assertTrue(m.is_watertight)
+            self.assertAlmostEqual(m.volume, m.info["analytic_volume"], delta=1e-5 * m.volume)
+        self.assertGreater(rnd.n_faces, hull.n_faces)
+        self.assertAlmostEqual(oct8.info["strut_radius"], 0.12)
+        # custom skeleton and a non-cubic cell
+        sk = lg.Skeleton.custom([([0, 0, 0], [1, 0, 0]), ([0, 0, 0], [0, 1, 0]), ([0, 0, 0], [0, 0, 1])])
+        m = lg.mesh_struts(lg.UnitCell.tetragonal(1.0, 1.5), sk, rho=0.1, cells=(2, 2, 1))
+        self.assertTrue(m.is_watertight)
+        self.assertAlmostEqual(m.extents[2], 1.5 + 2 * m.info["strut_radius"], delta=1e-4)
+
+    def test_bad_inputs(self):
+        with self.assertRaises(ValueError):
+            lg.mesh_struts(1.0, "octet", rho=0.9)                 # struts vanish into the nodes
+        with self.assertRaises(ValueError):
+            lg.mesh_struts(1.0, "octet", radius=0.5)
+        with self.assertRaises(ValueError):
+            lg.mesh_struts(1.0, "octet")                          # neither rho nor radius
+        with self.assertRaises(ValueError):
+            lg.mesh_struts(1.0, "octet", rho=0.2, sides=2)
+
+    def test_report_and_cli(self):
+        m = lg.mesh_struts(1.0, "octet", rho=0.2, cells=(2, 2, 2))
+        rep = lg.dlp_report(m, pixel_mm=0.05)
+        self.assertIn("strut_radius", rep["features_mm"])
+        self.assertIn("min_solid_px", rep)
+        self.assertIn("strut_radius", lg.format_report(rep))
+        from latticegen import cli
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "s.stl")
+            cli.main(["build", "octet", "--method", "struts", "--a", "1", "--rho", "0.2",
+                      "--cells", "2", "2", "2", "--sides", "4", "--check", "-o", out])
+            back = lg.LatticeMesh.load(out)
+            self.assertGreater(back.n_faces, 0)
+            self.assertTrue(back.is_watertight)
 
 
 class TestPrinting(unittest.TestCase):

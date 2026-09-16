@@ -14,10 +14,12 @@ Two simplification levels:
   the seams stay dense.
 * ``seam_spacing=h`` (full): the seam curves themselves (periodic face
   loops, cap rims, cube-edge chains) are subsampled at arc spacing ~h
-  (index units), with keep/drop decisions made ONCE on the quotient seam
+  (cell length units), with keep/drop decisions made ONCE on the quotient seam
   graph so every piece (body, caps, periodic partners) inherits identical
-  decisions; interiors AND caps are then isotropically remeshed against
-  the coarse frozen seams.  Near-uniform triangles everywhere.
+  decisions; interiors AND caps are then remeshed against the coarse
+  frozen seams: isotropically (near-uniform triangles everywhere) or, with
+  ``remesh="decimate"``, by quadric edge collapse that keeps long triangles
+  along straight struts (typically 3-5x fewer faces).
 
 Not applicable to graded / heterogeneous blocks -- use :func:`mesh_stack`.
 Needs ``pymeshlab`` for the remeshing steps (raw instancing works without).
@@ -25,6 +27,7 @@ Needs ``pymeshlab`` for the remeshing steps (raw instancing works without).
 
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 
 import numpy as np
@@ -32,7 +35,7 @@ from skimage.measure import marching_cubes
 
 from .field import UnitField
 from .mesh import LatticeMesh
-from .meshops import weld, mesh_volume, open_edges as _open_edges
+from .meshops import weld, mesh_volume, mesh_area, open_edges as _open_edges
 
 
 # --------------------------------------------------------------------------- #
@@ -263,39 +266,88 @@ def simplify_piece(verts, faces, keep, N, snap_frac=0.4, spacing=None):
 # --------------------------------------------------------------------------- #
 
 def remesh_interior(verts, faces, targetlen, N, iterations=10):
-    """Isotropic explicit remeshing of the interior with the border frozen;
-    asserts that the boundary canonical-key set is unchanged."""
+    """Isotropic explicit remeshing of the interior with the border frozen.
+
+    Faces containing a boundary edge are frozen first (leaves the sliver
+    band next to the seams remeshable).  If the remesher nevertheless moves
+    a border vertex -- which happens occasionally at targets of only a few
+    voxels -- the pass is repeated with every face touching a boundary
+    vertex frozen as well.  The boundary canonical-key set must be
+    unchanged afterwards.
+    """
     from .remesh import _pymeshlab, _abs_len
     pymeshlab = _pymeshlab()
-    b_before = set(_keys(_canon(verts[_boundary_vertex_ids(faces)], N)).tolist())
+    faces = np.asarray(faces)
+    bverts = _boundary_vertex_ids(faces)
+    b_before = set(_keys(_canon(verts[bverts], N)).tolist())
     be = _open_edges(faces)
     bekeys = set(map(tuple, be))
-    fs = np.ones(len(faces), np.float64)
     fe = np.sort(np.stack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]], axis=1), axis=2)
+    frozen_edge = np.zeros(len(faces), bool)
     for i in range(3):
-        mask = np.array([tuple(p) in bekeys for p in fe[:, i, :]])
-        fs[mask] = 0.0
+        frozen_edge |= np.array([tuple(p) in bekeys for p in fe[:, i, :]])
+    frozen_vertex = np.isin(faces, bverts).any(axis=1)
+
+    for frozen in (frozen_edge, frozen_vertex):
+        fs = np.where(frozen, 0.0, 1.0)
+        ms = pymeshlab.MeshSet()
+        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=np.asarray(verts, np.float64),
+                                   face_matrix=faces, f_scalar_array=fs))
+        ms.compute_selection_by_condition_per_face(condselect="fq > 0.5")
+        ms.meshing_isotropic_explicit_remeshing(
+            selectedonly=True, iterations=iterations, reprojectflag=True,
+            adaptive=False, targetlen=_abs_len(targetlen))
+        m = ms.current_mesh()
+        v2 = m.vertex_matrix().astype(np.float32)
+        f2 = m.face_matrix()
+        b_after = set(_keys(_canon(v2[_boundary_vertex_ids(f2)], N)).tolist())
+        if b_before == b_after:
+            return v2, f2
+    raise RuntimeError("border changed during interior remeshing; try a larger "
+                       "seam_spacing / edge_length")
+
+
+def decimate_interior(verts, faces, target_faces, N, quality_thr=0.1):
+    """Quadric edge-collapse decimation of the interior with the border frozen.
+
+    The border is protected by ``preserveboundary`` with a very large
+    boundary weight (pymeshlab's selected-only mode loses its selection as
+    it collapses and stalls far above the target); ``target_faces`` is the
+    budget for the whole piece.  A low ``quality_thr`` lets the triangles
+    stretch along straight struts, which is where the savings over
+    isotropic remeshing come from.  The boundary canonical-key set must be
+    unchanged afterwards (checked; RuntimeError otherwise).
+    """
+    from .remesh import _pymeshlab
+    pymeshlab = _pymeshlab()
+    faces = np.asarray(faces)
+    bverts = _boundary_vertex_ids(faces)
+    b_before = set(_keys(_canon(verts[bverts], N)).tolist())
     ms = pymeshlab.MeshSet()
-    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=np.asarray(verts, np.float64),
-                               face_matrix=np.asarray(faces), f_scalar_array=fs))
-    ms.compute_selection_by_condition_per_face(condselect="fq > 0.5")
-    ms.meshing_isotropic_explicit_remeshing(
-        selectedonly=True, iterations=iterations, reprojectflag=True,
-        adaptive=False, targetlen=_abs_len(targetlen))
+    ms.add_mesh(pymeshlab.Mesh(vertex_matrix=np.asarray(verts, np.float64), face_matrix=faces))
+    ms.meshing_decimation_quadric_edge_collapse(
+        targetfacenum=max(int(target_faces), 4), preserveboundary=True, boundaryweight=1e6,
+        preservetopology=True, preservenormal=True, optimalplacement=True,
+        planarquadric=True, qualitythr=float(quality_thr), autoclean=True)
     m = ms.current_mesh()
     v2 = m.vertex_matrix().astype(np.float32)
     f2 = m.face_matrix()
     b_after = set(_keys(_canon(v2[_boundary_vertex_ids(f2)], N)).tolist())
     if b_before != b_after:
-        raise RuntimeError("border changed during interior remeshing")
+        raise RuntimeError("border changed during interior decimation; try a larger "
+                           "seam_spacing / edge_length")
     return v2, f2
 
 
 def remesh_frozen(verts, faces, method="isotropic", reduction=10, quality_thr=0.3,
-                  targetlen_pct=1.0, iterations=5):
+                  targetlen=None, targetlen_pct=1.0, iterations=5):
     """Remesh / decimate the unit body with the FULL marching-density
-    boundary frozen (legacy 'frozen seams' path)."""
-    from .remesh import _pymeshlab
+    boundary frozen (legacy 'frozen seams' path).
+
+    targetlen : isotropic target edge in index units (voxels); if None,
+                ``targetlen_pct`` percent of the bounding box is used.
+    """
+    from .remesh import _pymeshlab, _abs_len
     pymeshlab = _pymeshlab()
     ms = pymeshlab.MeshSet()
     ms.add_mesh(pymeshlab.Mesh(vertex_matrix=np.asarray(verts, np.float64),
@@ -310,9 +362,10 @@ def remesh_frozen(verts, faces, method="isotropic", reduction=10, quality_thr=0.
         for _ in range(2):
             ms.apply_selection_dilatation()
         ms.apply_selection_inverse(invfaces=True, invverts=True)
+        tl = (pymeshlab.PercentageValue(targetlen_pct) if targetlen is None
+              else _abs_len(targetlen))
         ms.meshing_isotropic_explicit_remeshing(
-            selectedonly=True, iterations=iterations, reprojectflag=True,
-            targetlen=pymeshlab.PercentageValue(targetlen_pct))
+            selectedonly=True, iterations=iterations, reprojectflag=True, targetlen=tl)
     else:
         raise ValueError(f"unknown method {method!r}")
     m = ms.current_mesh()
@@ -372,19 +425,39 @@ def _unit_caps_global(f, t):
 
 def mesh_instanced(field: UnitField, rho=0.3, cells=(1, 1, 1), seam_spacing=None,
                    edge_length=None, remesh="isotropic", density_correct=True,
-                   exact_density=True, verbose=False, **remesh_kw) -> LatticeMesh:
+                   exact_density=True, anisotropy=4.0, quality_thr=0.1, verbose=False,
+                   **remesh_kw) -> LatticeMesh:
     """Lean mesh of a homogeneous (nx, ny, nz) block by unit-cell instancing.
 
-    seam_spacing : arc spacing of the simplified seam curves, in INDEX units
-                   (voxels; e.g. N/16 .. N/8).  If set, seams are subsampled
-                   consistently on the quotient graph and interiors and caps
-                   are isotropically remeshed at ``edge_length`` (default:
-                   the same value).  This is the strongest, most uniform
-                   simplification.
-    edge_length  : target triangle edge for the interior remesh (index units).
-    remesh       : used when seam_spacing is None: 'isotropic', 'decimate'
-                   (interior only, seams frozen at marching density) or
-                   None / False for raw instancing without pymeshlab.
+    seam_spacing : arc spacing of the simplified seam curves, in the CELL
+                   LENGTH UNIT (mm), like every other length in the API.
+                   If set, the seam curves (periodic face loops, cap rims,
+                   cube-edge chains) are subsampled consistently on the
+                   quotient graph and the interiors of body and caps are
+                   isotropically remeshed at ``edge_length``.  Useful range:
+                   1/16 .. 1/8 of the cell edge.  This is the strongest,
+                   most uniform simplification.
+    edge_length  : target triangle edge of the interior remesh (mm).
+                   Default: ``seam_spacing`` when that is given, otherwise
+                   pymeshlab's 1 % of the bounding box.  With
+                   ``seam_spacing=None`` it sets the interior target of the
+                   frozen-seams isotropic remesh (the seams themselves stay
+                   at marching-cubes density).
+    remesh       : how the interiors are simplified.  With ``seam_spacing``
+                   set: 'isotropic' (uniform triangles of ``edge_length``)
+                   or 'decimate' (quadric edge collapse to the face budget
+                   of an isotropic mesh divided by ``anisotropy``; long
+                   triangles along straight struts, 3-5x fewer faces).
+                   With ``seam_spacing=None``: 'isotropic', 'decimate'
+                   (seams frozen at marching density) or None / False for
+                   raw instancing without pymeshlab.
+                   Both lengths must be at least one voxel
+                   (``field.voxel_size``); smaller values almost always mean
+                   a unit mix-up and raise a ValueError.
+    anisotropy   : 'decimate' with seams: allowed mean triangle elongation
+                   (face budget divisor).
+    quality_thr  : 'decimate' with seams: minimum triangle quality accepted
+                   by the collapse (0..1; lower = longer triangles).
     density_correct : simplification shifts the volume slightly (coarse
                    seams inscribe the strut sections, smoothing shrinks);
                    measure the unit-cell density and iterate the isovalue
@@ -402,23 +475,51 @@ def mesh_instanced(field: UnitField, rho=0.3, cells=(1, 1, 1), seam_spacing=None
     if not (0.0 < float(rho) < 1.0):
         raise ValueError("rho must lie strictly inside (0, 1)")
 
+    # lengths come in cell units (mm); the unit pieces live in voxel units
+    vox = float(np.mean(field.voxel_size))
+
+    def to_voxels(value, name):
+        if value is None:
+            return None
+        v = float(value) / vox
+        if v < 1.0:
+            raise ValueError(f"{name}={value} is smaller than one voxel ({vox:.4g} cell units); "
+                             f"lengths are in the cell length unit (mm), not voxels")
+        return v
+
+    seam_vox = to_voxels(seam_spacing, "seam_spacing")
+    edge_vox = to_voxels(edge_length, "edge_length")
+    if edge_length is not None and seam_spacing is None and remesh != "isotropic":
+        warnings.warn("edge_length is only used by the isotropic remesh; with "
+                      f"remesh={remesh!r} it has no effect", RuntimeWarning, stacklevel=2)
+
     def build(t):
         v0, f0 = periodic_unit_mesh(f, t)
         caps = _unit_caps_global(f, t)
-        if seam_spacing is not None:
-            tl = seam_spacing if edge_length is None else edge_length
+        if seam_vox is not None:
+            tl = seam_vox if edge_vox is None else edge_vox
             pieces = [(v0, f0)] + [(v, fc) for _, _, v, fc in caps]
-            keep = seam_decisions(pieces, N, seam_spacing)
-            f0 = simplify_piece(v0, f0, keep, N, spacing=seam_spacing)
-            v0, f0 = remesh_interior(v0, f0, tl, N)
+            keep = seam_decisions(pieces, N, seam_vox)
+
+            def interior(v, fc):
+                if remesh == "decimate":
+                    budget = mesh_area(v, fc) / (np.sqrt(3) / 4 * tl * tl) / float(anisotropy)
+                    return decimate_interior(v, fc, int(np.ceil(budget)), N, quality_thr)
+                return remesh_interior(v, fc, tl, N)
+
+            f0 = simplify_piece(v0, f0, keep, N, spacing=seam_vox)
+            v0, f0 = interior(v0, f0)
             caps2 = []
             for ax, side, v, fc in caps:
-                fc = simplify_piece(v, fc, keep, N, spacing=seam_spacing)
-                v, fc = remesh_interior(v, fc, tl, N)
+                fc = simplify_piece(v, fc, keep, N, spacing=seam_vox)
+                v, fc = interior(v, fc)
                 caps2.append((ax, side, v, fc))
             caps = caps2
         elif remesh:
-            v0, f0 = remesh_frozen(v0, f0, method=remesh, **remesh_kw)
+            kw = dict(remesh_kw)
+            if remesh == "isotropic" and edge_vox is not None:
+                kw.setdefault("targetlen", edge_vox)
+            v0, f0 = remesh_frozen(v0, f0, method=remesh, **kw)
         return v0, f0, caps
 
     def unit_density(v0, f0, caps):
@@ -491,7 +592,8 @@ def mesh_instanced(field: UnitField, rho=0.3, cells=(1, 1, 1), seam_spacing=None
     verts, faces = weld(verts, faces)
     verts = (verts / N) @ np.asarray(A, np.float32)
     info = dict(mode="instanced", threshold=t, cells=(nx, ny, nz), N=N, A=A.copy(),
-                box_volume=field.cell.volume * nx * ny * nz, seam_spacing=seam_spacing)
+                box_volume=field.cell.volume * nx * ny * nz, seam_spacing=seam_spacing,
+                edge_length=edge_length, remesh=remesh)
     mesh = LatticeMesh(verts, faces[:, ::-1], info=info)
     from .meshing import _warn_if_disconnected
     _warn_if_disconnected(mesh)
