@@ -13,8 +13,8 @@ mesh = lg.mesh_struts(cell, "octet", rho=rho, cells=cells, sides=6, verbose=True
 print(f"built in {time.time() - t0:.1f} s")
 print(mesh.report())
 # strut / node sizes are known exactly from the construction; no field needed
-print(lg.format_report(lg.dlp_report(mesh, pixel_mm=0.05, layer_mm=0.05)))
-mesh.export("octet_20x20x20_struts.stl")           # ~270 MB binary STL
+print(lg.format_report(lg.dlp_report(mesh, pixel_mm=0.027, layer_mm=0.05)))
+mesh.export("octet_20x20x20_struts.3mf")           # ~270 MB binary STL
 
 # variants: square struts (fewer triangles), rounded nodes, explicit radius
 square = lg.mesh_struts(cell, "octet", rho=rho, cells=(3, 3, 3), sides=4)
