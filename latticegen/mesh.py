@@ -103,10 +103,12 @@ class LatticeMesh:
     def relative_density(self):
         """Mesh volume over the volume of the nominal block, or None.
 
-        Needs ``info['box_volume']``, which the block builders set.
+        Needs ``info['box_volume']``, which the block builders set. Volume added
+        by :func:`~latticegen.add_plates` is left out, so this stays the density
+        of the lattice itself.
         """
         vb = self.info.get("box_volume")
-        return None if vb is None else self.volume / vb
+        return None if vb is None else (self.volume - self.info.get("plate_volume", 0.0)) / vb
 
     def edge_lengths(self) -> np.ndarray:
         """Length of every triangle side (shared edges appear once per face).
@@ -191,7 +193,7 @@ class LatticeMesh:
                    euler=int(nv - len(uk) + nf))
         vb = self.info.get("box_volume")
         if vb is not None:
-            out["relative_density"] = volume / vb
+            out["relative_density"] = (volume - self.info.get("plate_volume", 0.0)) / vb
         out["outward"] = volume > 0
         out["stl_size_MB"] = (84 + 50 * self.n_faces) / 1e6
         return out
@@ -217,6 +219,12 @@ class LatticeMesh:
                  f"volume {c['volume']:.6g}   area {c['area']:.6g}"]
         if "relative_density" in c:
             lines[-1] += f"   relative density {c['relative_density']:.4f}"
+            if self.info.get("plates"):
+                lines[-1] += " (lattice only)"
+        if self.info.get("plates"):
+            lines.append(f"plates: {self.info['plates']}, {self.info['plate_thickness']:.4g} mm thick, "
+                         f"{self.info['plate_size'] * 100:.0f} % of the footprint sides, "
+                         f"adding volume {self.info['plate_volume']:.6g}")
         lines.append(f"edge length min/median/max {c['edge_min']:.4g} / "
                      f"{c['edge_median']:.4g} / {c['edge_max']:.4g}")
         return "\n".join(lines)
@@ -332,8 +340,8 @@ class LatticeMesh:
     def load(cls, path) -> "LatticeMesh":
         """Read a mesh file.
 
-        Binary STL is read directly; anything else (ASCII STL, OBJ, PLY, 3MF, ...)
-        goes through trimesh.
+        Binary STL and 3MF are read directly; anything else (ASCII STL, OBJ,
+        PLY, ...) goes through trimesh.
 
         Parameters
         ----------
@@ -343,6 +351,9 @@ class LatticeMesh:
         -------
         LatticeMesh
         """
+        if str(path).lower().endswith(".3mf"):
+            v, f = meshops.read_3mf(path)
+            return cls(v, f)
         if str(path).lower().endswith(".stl"):
             try:
                 v, f = meshops.read_stl(path)
@@ -355,16 +366,17 @@ class LatticeMesh:
     def export(self, path, **kw) -> str:
         """Write the mesh to a file; the format follows the extension.
 
-        ``.stl`` uses a streamed binary writer that handles any size without
-        building the file in memory. Other formats (``.obj``, ``.ply``, ``.off``,
-        ``.glb``, ``.3mf``) go through trimesh, which needs the whole mesh in
-        memory several times over.
+        ``.stl`` (binary) and ``.3mf`` (one object, millimetres) use streamed
+        writers that handle any size without building the file in memory.
+        Other formats (``.obj``, ``.ply``, ``.off``, ``.glb``) go through
+        trimesh, which needs the whole mesh in memory several times over.
 
         Parameters
         ----------
         path : str or path-like
         **kw
-            Passed to the writer (``header`` for STL).
+            Passed to the writer (``header`` for STL; ``metadata``, a dict of
+            3MF metadata entries, for 3MF).
 
         Returns
         -------
@@ -375,6 +387,12 @@ class LatticeMesh:
         ext = os.path.splitext(path)[1].lower()
         if ext == ".stl":
             meshops.write_stl(path, self.verts, self.faces, **kw)
+        elif ext == ".3mf":
+            from . import __version__, CREDIT
+            meta = {"Title": os.path.splitext(os.path.basename(path))[0],
+                    "Application": f"latticegen {__version__} ({CREDIT})"}
+            meta.update(kw.pop("metadata", None) or {})
+            meshops.write_3mf(path, self.verts, self.faces, metadata=meta, **kw)
         else:
             self.to_trimesh().export(path, **kw)
         return path

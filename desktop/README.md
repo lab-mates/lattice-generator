@@ -1,5 +1,7 @@
 # Lattice Generator desktop app (Windows)
 
+Joaquin Ramirez-Rico, University of Seville — [mates-lab.es](https://mates-lab.es/)
+
 The web front end from `webapp/` in its own window, backed by native Python.
 On top of the browser version, it can:
 
@@ -12,7 +14,7 @@ On top of the browser version, it can:
 ```
 LatticeGenerator.exe ── pywebview window (Microsoft WebView2) ── same HTML/Three.js page
         └─ desktop/server.py: HTTP on 127.0.0.1, per-session token,
-           one child process per build (Cancel = terminate), STL saved via a Save dialog
+           one child process per build (Cancel = terminate), STL or 3MF saved via a Save dialog
 latticegen.exe       ── console: `latticegen selftest`, or the full latticegen CLI
 ```
 

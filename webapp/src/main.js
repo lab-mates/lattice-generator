@@ -78,8 +78,10 @@ const handlers = {
     result = res;
     const [x, y, z] = meta.extents;
     $("dims").textContent = `${fmt(x)} × ${fmt(y)} × ${fmt(z)} mm`;
-    $("download").hidden = false;
-    $("download").textContent = `${engine.native ? "Save" : "Download"} STL (${res.sizeMB.toFixed(1)} MB)`;
+    $("save").hidden = false;
+    const verb = engine.native ? "Save" : "Download";
+    $("download").textContent = `${verb} STL (${res.sizeMB.toFixed(1)} MB)`;
+    $("download-3mf").textContent = `${verb} 3MF`;
     const t = meta.timings.total ?? 0;
     setStatus(`Done in ${t.toFixed(1)} s: ${meta.n_faces.toLocaleString()} triangles` +
               (meta.preview_partial ? ". Showing one corner; the file has the whole block." : ""));
@@ -142,7 +144,12 @@ function readParams() {
     sheet: el("sheet").checked, N: parseInt(el("N").value, 10) || 0,
     pixel: num("pixel"), layer: num("layer"), check: el("check").checked,
     islands: el("islands").checked,
+    plates: el("plates").value,
   };
+  if (p.plates !== "none") {
+    p.plate_thickness = num("plate_thickness");
+    p.plate_size = num("plate_size") / 100;
+  }
   if (form.dataset.engine === "native") {
     const field = m !== "struts";
     p.repair = el("repair").checked;
@@ -165,6 +172,10 @@ function validate(p) {
   const rhos = p.graded || [p.rho];
   if (rhos.some((r) => !(r > 0 && r < 0.95))) bad.push("solid fraction (1 to 90 %)");
   if (!(p.pixel > 0) || !(p.layer > 0)) bad.push("printer pixel or layer");
+  if (p.plates !== "none") {
+    if (!(p.plate_thickness > 0)) bad.push("plate thickness");
+    if (!(p.plate_size >= 1 && p.plate_size <= 2)) bad.push("plate size (100 to 200 %)");
+  }
   if (p.instanced) {
     // seam points must be at least one grid voxel apart
     const n = p.N || recommendGrid(Math.min(...(p.cell ? p.cell.slice(0, 3) : [p.a])), p.pixel, true);
@@ -200,6 +211,13 @@ function updateForm() {
     : instanced ? "Repeating one cell needs a uniform density" : "";
   $("method-hint").textContent = METHOD_HINTS[m];
   $("a-field").classList.toggle("muted", $("general-cell").open);
+  const plates = el("plates").value !== "none";
+  for (const k of ["plate_thickness", "plate_size"]) el(k).disabled = !plates;
+  for (const f of $("plate-fields").children) f.classList.toggle("muted", !plates);
+  $("plate-hint").hidden = !plates;
+  $("plate-hint").textContent = m === "struts"
+    ? "The plate faces pass through the centres of the outermost joints, so the beams are embedded, not just touching."
+    : "The plates are welded to the flat faces of the block.";
 
   const p = readParams();
   const bad = validate(p);
@@ -254,6 +272,7 @@ function save() {
   try {
     const data = Object.fromEntries(new FormData(form));
     for (const k of CHECKBOXES) data[k] = el(k).checked;
+    for (const k of ["plate_thickness", "plate_size"]) data[k] = el(k).value;   // kept while disabled
     data.general = $("general-cell").open;
     localStorage.setItem(STORE_KEY, JSON.stringify(data));
   } catch { /* storage unavailable: nothing to remember */ }
@@ -308,7 +327,7 @@ form.addEventListener("submit", (ev) => {
   running = true;
   logLines = [];
   appendLog(`run: ${JSON.stringify(p)}`);
-  $("download").hidden = true;
+  $("save").hidden = true;
   result = null;
   updateButtons();
   const t0 = performance.now();
@@ -326,12 +345,24 @@ $("cancel").addEventListener("click", () => {
   updateButtons();
 });
 
-$("download").addEventListener("click", async () => {
+async function saveAs(format) {
   if (!result) return;
-  const r = await result.save();
-  if (r?.saved && engine.native) setStatus(`Saved ${r.saved}`);
-  else if (r?.error) setStatus(r.error, false, true);
-});
+  const buttons = [$("download"), $("download-3mf")];
+  buttons.forEach((b) => { b.disabled = true; });
+  if (format === "3mf") setStatus("Writing the 3MF file…", true);
+  try {
+    const r = await result.save(format);
+    if (r?.saved) setStatus(engine.native ? `Saved ${r.saved}` : `Downloaded ${r.saved}`);
+    else if (r?.error) setStatus(r.error, false, true);
+    else setStatus("Not saved.");
+  } catch (e) {
+    setStatus(`Could not write the ${format.toUpperCase()} file: ${e.message || e}`, false, true);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+$("download").addEventListener("click", () => saveAs("stl"));
+$("download-3mf").addEventListener("click", () => saveAs("3mf"));
 
 // ------------------------------------------------------------------ tabs
 function showTab(name) {

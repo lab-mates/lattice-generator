@@ -2,7 +2,9 @@ latticegen
 ==========
 
 Periodic lattice structures for 3D printing (DLP / resin), as one Python
-package. This is the API reference, built from the docstrings. The ideas
+package, by Joaquin Ramirez-Rico, University of Seville
+(`mates-lab.es <https://mates-lab.es/>`_). This is the API reference, built
+from the docstrings. The ideas
 behind the methods are in ``docs/fundamentals.md`` and a task-oriented
 guide with recipes is in ``docs/usage.md``.
 
@@ -48,6 +50,10 @@ Quick start
 
    print(lg.format_report(lg.dlp_report(cube, pixel_mm=0.05, layer_mm=0.05)))
 
+   # solid plates for compression tests, and 3MF export
+   plated = lg.add_plates(cube, cell, (20, 20, 20), "both", thickness=1.0)
+   plated.export("octet_2cm_plates.3mf")
+
 Or in one call with the options of the GUIs and the command line,
 :func:`latticegen.app.build`.
 
@@ -80,6 +86,7 @@ Which mesher?
    meshing
    mesh
    processing
+   plates
    printing
    app
    cli

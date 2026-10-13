@@ -1,6 +1,6 @@
 // Headless check that latticegen runs under the bundled Pyodide:
 //   npm run smoke            small builds of every method
-//   npm run smoke -- big     also time a 20x20x20 octet struts block
+//   npm run smoke -- big     also time a 20x20x20 octet struts block (-- big plates: with plates)
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -30,9 +30,15 @@ const cases = process.argv.includes("only-big") ? [] : [
   { topology: "gyroid", method: "tpms", a: 3, rho: 0.25, cells: [2, 2, 2], N: 32, sheet: true },
   { topology: "bcc", method: "sdf", a: 2, cells: [2, 2, 3], N: 32, graded: [0.15, 0.4] },
   { topology: "octet", method: "sdf", cell: [2, 2, 2.5, 90, 90, 90], rho: 0.3, cells: [1, 1, 1], N: 32 },
+  // plates (Manifold WASM union) and 3MF conversion
+  { topology: "octet", method: "struts", a: 1, rho: 0.2, cells: [2, 2, 2], plates: "both",
+    plate_thickness: 0.5, plate_size: 1.2, export3mf: true },
+  { topology: "gyroid", method: "tpms", a: 2, rho: 0.25, cells: [2, 2, 1], N: 32, plates: "bottom",
+    plate_thickness: 1, plate_size: 1.0, cell: [2, 2, 2, 90, 90, 70] },
 ];
 if (process.argv.some((a) => a.endsWith("big")))
-  cases.push({ topology: "octet", method: "struts", a: 1, rho: 0.2, cells: [20, 20, 20], check: !process.argv.includes("nocheck") });
+  cases.push({ topology: "octet", method: "struts", a: 1, rho: 0.2, cells: [20, 20, 20], check: !process.argv.includes("nocheck"),
+               ...(process.argv.includes("plates") ? { plates: "both", plate_thickness: 1, plate_size: 1.2 } : {}) });
 
 let failed = 0;
 for (const p of cases) {
@@ -46,12 +52,21 @@ for (const p of cases) {
     const stl = py.FS.readFile(meta.stl_path);
     const nStl = new DataView(stl.buffer).getUint32(80, true);
     const ok = nStl === meta.n_faces && stl.length === 84 + 50 * nStl
-      && fb.data.length % 3 === 0 && vb.data.length % 3 === 0 && /watertight True/.test(meta.report);
+      && fb.data.length % 3 === 0 && vb.data.length % 3 === 0 && /watertight True/.test(meta.report)
+      && (!p.plates || /components 1\b/.test(meta.report) && /plates: /.test(meta.report));
+    let note = "";
+    if (p.export3mf) {
+      bridge.convert(meta.stl_path, "/tmp/lattice.3mf");
+      const z = py.FS.readFile("/tmp/lattice.3mf");
+      py.FS.unlink("/tmp/lattice.3mf");
+      if (z[0] !== 0x50 || z[1] !== 0x4b) failed++;
+      note = `  3MF ${(z.length / 1e6).toFixed(2)} MB`;
+    }
     if (!ok) failed++;
     console.log(`${ok ? "ok  " : "FAIL"} ${p.method.padEnd(7)} ${p.topology.padEnd(7)} `
       + `${meta.n_faces.toLocaleString().padStart(10)} faces  ${(stl.length / 1e6).toFixed(1).padStart(6)} MB  `
       + `${((performance.now() - t0) / 1000).toFixed(1)} s  ${JSON.stringify(meta.timings)}`
-      + (meta.preview_partial ? `  (preview ${fb.data.length / 3} faces)` : ""));
+      + (meta.preview_partial ? `  (preview ${fb.data.length / 3} faces)` : "") + note);
     for (const l of logs.filter((l) => /warning|WARN|^\s+- /.test(l))) console.log("       " + l.trim());
     vb.release(); fb.release(); verts.destroy(); faces.destroy(); r.destroy();
     py.FS.unlink(meta.stl_path);

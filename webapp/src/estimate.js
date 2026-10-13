@@ -43,5 +43,10 @@ export function estimate(p) {
     if (p.method === "tpms" && p.sheet) k *= 1.8;
     faces = k * N * N * nCells;
   }
+  if (p.plates && p.plates !== "none") {                // plates: wider footprint, taller block
+    size[0] *= p.plate_size;
+    size[1] *= p.plate_size;
+    size[2] += p.plate_thickness * (p.plates === "both" ? 2 : 1);
+  }
   return { faces, N, size, stlMB: (84 + 50 * faces) / 1e6 };
 }

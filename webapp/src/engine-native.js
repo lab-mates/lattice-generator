@@ -57,15 +57,15 @@ export class NativeEngine {
     const meta = s.meta;
     this.on.result({
       meta, verts, faces, sizeMB: (84 + 50 * meta.n_faces) / 1e6,
-      save: () => this.#save(job, meta.filename),
+      save: (fmt = "stl") => this.#save(job, meta.filename.replace(/\.stl$/, `.${fmt}`), fmt),
     });
   }
 
-  async #save(job, filename) {
-    if (window.pywebview?.api?.save_stl) return window.pywebview.api.save_stl(job, filename);
+  async #save(job, filename, fmt) {
+    if (window.pywebview?.api?.save_file) return window.pywebview.api.save_file(job, filename, fmt);
     // --browser mode: plain download from the local server
     const a = Object.assign(document.createElement("a"),
-      { href: `api/job/${job}/stl?token=${encodeURIComponent(this.token)}`, download: filename });
+      { href: `api/job/${job}/file?fmt=${fmt}&token=${encodeURIComponent(this.token)}`, download: filename });
     document.body.append(a);
     a.click();
     a.remove();

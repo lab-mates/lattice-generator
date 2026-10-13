@@ -1,7 +1,8 @@
 # Usage guide
 
 Everything you need to build lattice blocks with `latticegen`, from install
-to print-ready STL. The [fundamentals](fundamentals.md) explain *why* the
+to print-ready STL or 3MF. latticegen is developed by Joaquin Ramirez-Rico,
+University of Seville ([mates-lab.es](https://mates-lab.es/)). The [fundamentals](fundamentals.md) explain *why* the
 tools work the way they do; this guide explains *how* to use them.
 
 Contents
@@ -17,12 +18,13 @@ Contents
 9. [Lean meshes: explicit struts](#9-lean-meshes-explicit-struts)
 10. [Simplification, remeshing, repair](#10-simplification-remeshing-repair)
 11. [Diagnostics and the DLP report](#11-diagnostics-and-the-dlp-report)
-12. [Export and import](#12-export-and-import)
-13. [Command-line interface](#13-command-line-interface)
-14. [Recipes](#14-recipes)
-15. [Performance and memory](#15-performance-and-memory)
-16. [Troubleshooting](#16-troubleshooting)
-17. [API summary](#17-api-summary)
+12. [Plates for mechanical tests](#12-plates-for-mechanical-tests)
+13. [Export and import](#13-export-and-import)
+14. [Command-line interface](#14-command-line-interface)
+15. [Recipes](#15-recipes)
+16. [Performance and memory](#16-performance-and-memory)
+17. [Troubleshooting](#17-troubleshooting)
+18. [API summary](#18-api-summary)
 
 ---
 
@@ -444,12 +446,54 @@ solid pieces and enclosed voids in the unit cell, non-watertight or
 inverted meshes, disconnected components, over-fine triangulation, and
 more than 5 M faces. Either argument (`mesh`, `field`) may be omitted.
 
-## 12. Export and import
+## 12. Plates for mechanical tests
+
+`add_plates` welds solid plates to the bottom and/or top of a block, e.g. as
+loading platens for compression tests. The result is one closed solid, so
+the STL or 3MF holds a single object.
+
+```python
+cell = lg.UnitCell.cubic(1.0)
+cube = lg.mesh_struts(cell, "octet", rho=0.20, cells=(10, 10, 10))
+cube = lg.add_plates(cube, cell, (10, 10, 10), where="both",   # "bottom", "top", "both"
+                     thickness=1.0,                            # mm
+                     size=1.2)                                 # side / block side, >= 1, centred
+cube.export("octet_plates.3mf")
+cube.relative_density            # the lattice's density: the plates are left out
+cube.info["plate_volume"]        # volume the plates added
+```
+
+* **Where the plates attach.** Field meshes (`mesh_stack`, `mesh_instanced`)
+  end in flat caps on the block faces, and the plates are placed against
+  them. Strut meshes end in whole beams and joints that reach one beam
+  radius past the outermost nodes; a plate below them would only touch the
+  joints at a point. So for `mesh_struts` the plate faces go through the
+  centres of the lowest and highest nodes (`mesh.info["node_z"]`), and the
+  joints and in-plane beams there are half embedded. `planes=(z_bottom,
+  z_top)` overrides both.
+* **Shape.** Each plate is the block's footprint (spanned by `nx a1` and
+  `ny a2`) scaled about its centre: a rectangle for 90 degree cells, a
+  parallelogram otherwise. Oblique `a3` is fine; the top plate follows the
+  sheared block.
+* **How.** A mesh boolean union (`manifold3d`, a dependency already) of the
+  faces near the plates only; the rest of the block is stitched back
+  unchanged. A 20 x 20 x 20 octet block (9.9 M faces) gets both plates in
+  ~3 s.
+* Add the plates last: after `simplify` (which would coarsen them) and after
+  `remove_islands`, or slivers cut off at the block faces get welded onto the
+  plate. `build()` does it in that order.
+
+`latticegen.app.build` and the command line take `plates`, `plate_thickness`
+and `plate_size` (`--plates {none,bottom,top,both}`, `--plate-thickness`,
+`--plate-size`).
+
+## 13. Export and import
 
 ```python
 mesh.export("part.stl")              # streamed binary STL, any size
-mesh.export("part.3mf")              # via trimesh: .obj, .ply, .off, .glb, .3mf
-m = lg.LatticeMesh.load("part.stl")  # welded on load
+mesh.export("part.3mf")              # streamed 3MF: one object, millimetres, any size
+mesh.export("part.obj")              # via trimesh: .obj, .ply, .off, .glb
+m = lg.LatticeMesh.load("part.stl")  # welded on load (binary STL and 3MF read directly)
 tm = mesh.to_trimesh()               # for anything trimesh can do (viewing, boolean ops, ...)
 field.save("octet_N96.npz"); field = lg.UnitField.load("octet_N96.npz")
 ```
@@ -457,7 +501,7 @@ field.save("octet_N96.npz"); field = lg.UnitField.load("octet_N96.npz")
 Geometry helpers: `mesh.scaled(f)`, `mesh.translated(v)`, `mesh.flipped()`,
 `mesh.weld()`, `mesh.copy()`.
 
-## 13. Command-line interface
+## 14. Command-line interface
 
 ```bash
 python -m latticegen list
@@ -468,6 +512,7 @@ python -m latticegen build octet --a 2 --rho 0.3 --cells 8 8 8 --instanced --sea
 python -m latticegen build octet --method fourier --node-comp 0.5 --a 2 --cells 3 3 3 --edge-length 0.05 -o f.stl
 python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 --check -o cube.stl
 python -m latticegen build octet --a 2 --rho 0.3 --cells 8 8 8 --instanced --seam-spacing 0.17 --remesh decimate -o leaner.stl
+python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 10 10 10 --plates both --plate-thickness 1 -o test.3mf
 python -m latticegen simplify part.stl --edge-length 0.05 -o part_lean.stl
 python -m latticegen check part_lean.stl --pixel 0.05 --layer 0.05
 ```
@@ -480,7 +525,9 @@ nodes, section 9), `--a` or `--cell A B C ALPHA BETA GAMMA`, `--N`
 `--instanced`, `--seam-spacing` (mm), `--edge-length` (mm: decimation target, or the
 interior remesh target with `--instanced`), `--remesh {isotropic,decimate}`
 (interior treatment with `--instanced`), `--sides` and `--node {hull,round}`
-(with `--method struts`; `--node` is `union` by default, or `hull` / `round`), `--repair`, `--remove-islands` (drop floating slivers,
+(with `--method struts`; `--node` is `union` by default, or `hull` / `round`),
+`--plates {none,bottom,top,both}`, `--plate-thickness` (mm), `--plate-size` (plate side over
+block side, >= 1, default 1.2), `--repair`, `--remove-islands` (drop floating slivers,
 `mesh.remove_islands()` defaults), `--check`, `--pixel`, `--layer`, `-o`, `-v`. If the package is
 `pip install`ed, `latticegen` is also available as a console command.
 
@@ -488,7 +535,7 @@ The same build is available from Python as `latticegen.app.build(topology, **opt
 (keyword names as the CLI flags, `log=` for progress lines); the CLI and the browser
 app in `webapp/` both call it.
 
-## 14. Recipes
+## 15. Recipes
 
 **Choose N for a printer.** `N = lg.recommend_grid(cell, pixel_mm)`; for a
 2 mm cell and 50 um pixels that is 80. Above ~128 the field arrays (N^3
@@ -541,7 +588,7 @@ cube.export("octet_2cm.stl")            # 5.4 M faces; sides=4 gives 3.8 M
 If the slicer still struggles, `sides=4`, or split the cube into two
 `(20, 20, 10)` halves and print them as separate parts.
 
-## 15. Performance and memory
+## 16. Performance and memory
 
 Measured on 8 cores, `N = 96`, 2 mm octet cell:
 
@@ -573,7 +620,7 @@ Memory rules of thumb:
   extra on 5 M faces. Pass the result on (`mesh.report(c)`,
   `dlp_report(..., check=c)`) instead of computing it twice.
 
-## 16. Troubleshooting
+## 17. Troubleshooting
 
 | symptom | cause and fix |
 |---|---|
@@ -588,7 +635,7 @@ Memory rules of thumb:
 | struts look faceted in the slicer preview | voxel coarser than the pixel; use `recommend_grid`. |
 | Kelvin / small-strut Fourier fields look blobby | short struts need larger `sigma` relative to the cutoff; the defaults (`0.07 a`, `gmax 5.5`) are blob-free from 10 % to 40 %, tune from there. |
 
-## 17. API summary
+## 18. API summary
 
 ```
 latticegen
@@ -616,9 +663,10 @@ latticegen
 │     .decimate() .simplify() .remesh() .repair() .remove_islands()
 │     .to_trimesh() .from_trimesh() .load() .export()
 ├── decimate, simplify, remesh_isotropic, repair, remove_islands   (functions in latticegen.remesh)
+├── add_plates(mesh, cell, cells, where, thickness, size, planes), set_union_backend(fn)
 ├── dlp_report(mesh, field, rho, pixel_mm, layer_mm, min_feature_px, min_pore_mm, resin_density_g_cm3, shrinkage_pct)
 ├── format_report(rep), recommend_grid(cell, pixel_mm, oversample)
 ├── fourier.{reciprocal_basis, enumerate_G, motif_coefficients, field_on_grid, evaluate, compensate_nodes, fourier_coefficients}
 ├── sdf.{periodic_segment_images, distance_field, sdf_on_grid, radius_for_density}
-└── meshops.{weld, is_watertight, open_edges, mesh_volume, mesh_area, connected_components, write_stl, read_stl}
+└── meshops.{weld, is_watertight, open_edges, mesh_volume, mesh_area, connected_components, write_stl, read_stl, write_3mf, read_3mf}
 ```

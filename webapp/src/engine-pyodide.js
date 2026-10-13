@@ -4,6 +4,7 @@ export class PyodideEngine {
     this.on = on;               // {status, log, ready, result, error}
     this.native = false;
     this.worker = null;
+    this.pending = null;        // {resolve, reject} of a running export
   }
 
   start() {
@@ -19,21 +20,42 @@ export class PyodideEngine {
     if (data.type === "status") this.on.status(data.text);
     else if (data.type === "log") this.on.log(data.text);
     else if (data.type === "ready") this.on.ready(data.options);
-    else if (data.type === "error") this.on.error({ ...data, fatal: /MemoryError|Aborted/i.test(data.text) });
+    else if (data.type === "exported") {
+      this.pending?.resolve(new Blob([data.data], { type: "model/3mf" }));
+      this.pending = null;
+    } else if (data.type === "error" && this.pending) {
+      this.pending.reject(new Error(data.text));
+      this.pending = null;
+    } else if (data.type === "error") this.on.error({ ...data, fatal: /MemoryError|Aborted/i.test(data.text) });
     else if (data.type === "result") {
       const blob = new Blob([data.stl], { type: "model/stl" });
       const filename = data.meta.filename;
       this.on.result({
         meta: data.meta, verts: data.verts, faces: data.faces, sizeMB: blob.size / 1e6,
-        save: async () => { saveBlob(blob, filename); return { saved: filename }; },
+        save: async (fmt = "stl") => {
+          if (fmt === "stl") { saveBlob(blob, filename); return { saved: filename }; }
+          const name = filename.replace(/\.stl$/, `.${fmt}`);
+          saveBlob(await this.#convert(blob, fmt, filename.replace(/\.stl$/, "")), name);
+          return { saved: name };
+        },
       });
     }
+  }
+
+  async #convert(blob, format, title) {
+    const stl = await blob.arrayBuffer();
+    return new Promise((resolve, reject) => {
+      this.pending = { resolve, reject };
+      this.worker.postMessage({ type: "export", stl, format, title }, [stl]);
+    });
   }
 
   run(params) { this.worker.postMessage({ type: "run", params }); }
 
   /** Stop a run (or recover from a crash): the interpreter is restarted. */
   cancel() {
+    this.pending?.reject(new Error("cancelled"));
+    this.pending = null;
     this.worker.terminate();
     this.start();
     this.on.status("Restarting the Python engine…");

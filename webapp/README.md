@@ -1,9 +1,11 @@
 # latticegen web app
 
+Joaquin Ramirez-Rico, University of Seville — [mates-lab.es](https://mates-lab.es/)
+
 A browser GUI for `latticegen`. The unchanged Python package runs in
 WebAssembly ([Pyodide](https://pyodide.org) 314.0.7, Python 3.14) inside a
-Web Worker. A Three.js view shows the result and the STL is downloaded from
-the page. Nothing is uploaded, and the built folder has no runtime internet
+Web Worker. A Three.js view shows the result and the STL (or a 3MF, converted
+on request) is downloaded from the page. Nothing is uploaded, and the built folder has no runtime internet
 dependencies.
 
 ```
@@ -13,7 +15,7 @@ src/viewer.js             Three.js build-plate view (mm grid, z up; flat or Gour
 src/engine-pyodide.js     web engine: Pyodide + latticegen in a Web Worker (src/worker.js)
 src/engine-native.js      desktop engine: the local server of desktop/ (?engine=native&token=...)
 src/estimate.js           face-count / STL-size estimate before a run
-src/manifold-backend.js   Manifold's WebAssembly build as `manifold_js`, for strut-sized joints
+src/manifold-backend.js   Manifold's WebAssembly build as `manifold_js`, for strut-sized joints and plates
 py/bridge.py              JSON params -> latticegen.app.build -> arrays + STL file
 launcher/                 Windows offline launcher (PowerShell static server)
 scripts/                  fetch-pyodide, pack-latticegen, smoke test, offline zip
@@ -23,8 +25,8 @@ The same page is the front end of the Windows desktop app (`../desktop/`).
 There, the native engine adds the "Lighter mesh" options.
 
 What it can build: struts (explicit beams), SDF, Fourier and TPMS, with uniform
-or graded (z) density, general cells, removal of floating slivers, and the
-DLP report. Simplify, remesh, repair and instancing need pymeshlab, which does
+or graded (z) density, general cells, solid plates on the top and/or bottom,
+removal of floating slivers, and the DLP report; STL or 3MF files. Simplify, remesh, repair and instancing need pymeshlab, which does
 not exist for WebAssembly, so they are in the CLI and the desktop app only.
 
 ## Build (WSL / Linux, Node >= 20)

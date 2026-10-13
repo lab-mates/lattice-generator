@@ -4,6 +4,7 @@ plain Python and is tested natively by tests/test_bridge.py).
 
     options()          -> JSON with topologies, TPMS names and defaults
     run(params, log)   -> dict(mesh, preview, stl_path, report, dlp, ...)
+    convert(src, dst)  -> write the STL ``src`` again in the format of ``dst`` (.3mf)
 
 The STL is written to a file (Pyodide keeps files in JS memory, outside the
 WebAssembly heap) and the worker reads it back from there.
@@ -25,14 +26,15 @@ PREVIEW_CELLS = 3
 # GUI parameter -> build() keyword (anything else in the JSON is ignored)
 _KEYS = ("topology", "method", "a", "cell", "N", "rho", "graded", "cells", "smooth",
          "node_comp", "sheet", "sides", "node", "islands", "check", "pixel", "layer",
+         "plates", "plate_thickness", "plate_size",
          # need pymeshlab (desktop app only)
          "instanced", "seam_spacing", "edge_length", "remesh", "repair")
 
 
 def _use_manifold_js():
-    """Under Pyodide there is no manifold3d wheel: route latticegen's hull
-    unions (strut-sized joints) to Manifold's WebAssembly build, which the
-    worker registers as the JS module ``manifold_js``."""
+    """Under Pyodide there is no manifold3d wheel: route latticegen's mesh
+    booleans (strut-sized joints, plates) to Manifold's WebAssembly build,
+    which the worker registers as the JS module ``manifold_js``."""
     try:
         import manifold3d  # noqa: F401
         return
@@ -52,6 +54,20 @@ def _use_manifold_js():
         return v, t, float(res.volume)
 
     set_hull_union_backend(backend)
+
+    def plates_backend(verts, faces, face_id, plates):
+        res = manifold_js.union_plates(
+            to_js(memoryview(np.ascontiguousarray(verts, np.float32).reshape(-1))),
+            to_js(memoryview(np.ascontiguousarray(faces, np.uint32).reshape(-1))),
+            to_js(memoryview(np.ascontiguousarray(face_id, np.uint32))),
+            to_js([np.asarray(p, float).tolist() for p in plates]))
+        if res.error:
+            raise ValueError(res.error)
+        v = np.frombuffer(res.verts.to_py(), np.float32).reshape(-1, 3).copy()
+        t = np.frombuffer(res.tris.to_py(), np.uint32).reshape(-1, 3).astype(np.int64)
+        return v, t, np.frombuffer(res.faceID.to_py(), np.uint32).copy()
+
+    lg.set_union_backend(plates_backend)
 
 
 _use_manifold_js()
@@ -88,6 +104,15 @@ def _kwargs(params: dict) -> dict:
     kw["cells"] = tuple(int(c) for c in kw.get("cells", (3, 3, 3)))
     kw["N"] = int(kw.get("N") or 0)
     return kw
+
+
+def convert(src, dst, title=None) -> str:
+    """Write the mesh file ``src`` (binary STL) again as ``dst``; the format
+    follows the extension (``.3mf``). ``title`` names the part inside a 3MF
+    (default: the file name)."""
+    kw = {"metadata": {"Title": title}} if title and dst.lower().endswith(".3mf") else {}
+    lg.LatticeMesh.load(src).export(dst, **kw)
+    return dst
 
 
 def _arrays(mesh):

@@ -6,7 +6,8 @@ the web front end and runs builds with native latticegen (pymeshlab included).
     POST /api/run          {params}   -> {"job": id}   (cancels a running job)
     GET  /api/job/<id>?since=n        -> {"state", "log": [...], "next", "meta"}
     GET  /api/job/<id>/preview        -> <u32 nv><u32 nf><f32 verts><u32 faces>
-    GET  /api/job/<id>/stl            -> the STL file
+    GET  /api/job/<id>/file?fmt=stl   -> the mesh file; fmt=3mf converts on first request
+    GET  /api/job/<id>/stl            -> same as file?fmt=stl
     POST /api/job/<id>/cancel
 
 Every /api request needs the per-session token (header X-Token or ?token=).
@@ -73,12 +74,25 @@ def _job_main(params, job_dir, q):
         q.put(("error", f"{type(e).__name__}: {e}", traceback.format_exc()))
 
 
+def _convert_main(src, dst, title, q):
+    try:
+        import bridge
+        bridge.convert(src, dst, title)
+        q.put(None)
+    except BaseException as e:
+        q.put(f"{type(e).__name__}: {e}")
+
+
+FORMATS = {"stl": "model/stl", "3mf": "model/3mf"}
+
+
 class Job:
     def __init__(self, params, root):
         self.id = uuid.uuid4().hex[:12]
         self.dir = os.path.join(root, self.id)
         os.makedirs(self.dir)
         self.log, self.state, self.meta, self.error = [], "running", None, None
+        self._convert_lock = threading.Lock()
         self.queue = _MP.Queue()
         self.proc = _MP.Process(target=_job_main, args=(params, self.dir, self.queue), daemon=True)
         self.proc.start()
@@ -121,6 +135,31 @@ class Job:
 
     def path(self, name):
         return os.path.join(self.dir, name)
+
+    def file(self, fmt="stl"):
+        """Path of the finished mesh in format ``fmt`` ('stl' or '3mf').  The
+        3MF is converted from the STL on first use, in a child process so
+        that its memory goes back to the system."""
+        if fmt not in FORMATS:
+            raise ValueError(f"unknown format {fmt!r}")
+        path = self.path(f"lattice.{fmt}")
+        part = self.path(f"partial.{fmt}")                   # the extension picks the writer
+        with self._convert_lock:
+            if not os.path.exists(path):
+                q = _MP.Queue()
+                title = os.path.splitext(self.meta["filename"])[0]
+                p = _MP.Process(target=_convert_main, args=(self.path("lattice.stl"), part, title, q),
+                                daemon=True)
+                p.start()
+                p.join()
+                err = q.get() if not q.empty() else f"the converter stopped (exit {p.exitcode})"
+                if err:
+                    raise RuntimeError(err)
+                os.replace(part, path)
+        return path
+
+    def filename(self, fmt="stl"):
+        return os.path.splitext(self.meta["filename"])[0] + "." + fmt
 
 
 # ---------------------------------------------------------------- server
@@ -252,8 +291,17 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
                                    "meta": job.meta, "error": job.error})
             if route[2] == "preview" and job.state == "done":
                 return self._file(job.path("preview.bin"), "application/octet-stream")
-            if route[2] == "stl" and job.state == "done":
-                return self._file(job.path("lattice.stl"), "model/stl", job.meta["filename"])
+            if route[2] in ("stl", "file") and job.state == "done":
+                fmt = parse_qs(urlparse(self.path).query).get("fmt", ["stl"])[0]
+                if route[2] == "stl":
+                    fmt = "stl"
+                if fmt not in FORMATS:
+                    return self._json({"error": "unknown format"}, 400)
+                try:
+                    path = job.file(fmt)
+                except RuntimeError as e:
+                    return self._json({"error": str(e)}, 500)
+                return self._file(path, FORMATS[fmt], job.filename(fmt))
         return self._json({"error": "not found"}, 404)
 
     def do_POST(self):

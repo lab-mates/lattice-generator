@@ -14,6 +14,8 @@
       <header class="brand">
         <h1>Lattice Generator</h1>
         <p id="tagline">Periodic lattices for resin printing, built in your browser. Nothing is uploaded.</p>
+        <p class="credit">Joaquin Ramirez-Rico, University of Seville ·
+          <a href="https://mates-lab.es/" target="_blank" rel="noopener">mates-lab.es</a></p>
       </header>
 
       <label class="field">
@@ -90,6 +92,24 @@
           <label class="field"><span>in y</span><input type="number" name="ny" value="3" min="1" max="200" step="1"></label>
           <label class="field"><span>in z (height)</span><input type="number" name="nz" value="3" min="1" max="200" step="1"></label>
         </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Plates</legend>
+        <label class="field">
+          <span>Solid plates, e.g. for compression tests</span>
+          <select name="plates">
+            <option value="none" selected>None</option>
+            <option value="bottom">Bottom</option>
+            <option value="top">Top</option>
+            <option value="both">Top and bottom</option>
+          </select>
+        </label>
+        <div class="row" id="plate-fields">
+          <label class="field"><span>Thickness</span><span class="unit"><input type="number" name="plate_thickness" value="1" min="0.05" step="any"><i>mm</i></span></label>
+          <label class="field"><span>Size</span><span class="unit wide"><input type="number" name="plate_size" value="120" min="100" max="200" step="any"><i>% of side</i></span></label>
+        </div>
+        <small class="hint" id="plate-hint" hidden></small>
       </fieldset>
 
       <details class="more">
@@ -190,7 +210,10 @@
         </div>
         <div class="overlay bottom">
           <span class="dims" id="dims"></span>
-          <button type="button" id="download" class="primary" hidden>Download STL</button>
+          <div class="save" id="save" hidden>
+            <button type="button" id="download" class="primary">Download STL</button>
+            <button type="button" id="download-3mf" class="primary">Download 3MF</button>
+          </div>
         </div>
         <div class="progress" id="progress" hidden></div>
       </div>

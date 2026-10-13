@@ -76,6 +76,32 @@ class TestEngine(unittest.TestCase):
         stl = self.req(f"api/job/{job}/stl?token={self.engine.token}", token=False)
         self.assertEqual(struct.unpack("<I", stl[80:84])[0], nf)
 
+    def test_plates_and_3mf(self):
+        job = self.req("api/run", {"topology": "bcc", "method": "struts", "a": 1, "rho": 0.2,
+                                   "cells": [2, 2, 2], "plates": "both", "plate_thickness": 0.5,
+                                   "plate_size": 1.2})["job"]
+        s = self.wait(job)
+        self.assertEqual(s["state"], "done", s.get("error"))
+        self.assertIn("plates: both", s["meta"]["report"])
+        self.assertAlmostEqual(s["meta"]["extents"][2], 3.0, places=5)
+        z = self.req(f"api/job/{job}/file?fmt=3mf")
+        self.assertEqual(z[:2], b"PK")
+        import io
+        import zipfile
+        model = zipfile.ZipFile(io.BytesIO(z)).read("3D/3dmodel.model").decode()
+        self.assertIn('<metadata name="Title">bcc_2x2x2</metadata>', model)
+        path = os.path.join(tempfile.mkdtemp(), "t.3mf")
+        with open(path, "wb") as fh:
+            fh.write(z)
+        import latticegen as lg
+        m = lg.LatticeMesh.load(path)
+        self.assertEqual(m.n_faces, s["meta"]["n_faces"])
+        self.assertTrue(m.is_watertight)
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.req(f"api/job/{job}/file?fmt=obj")
+        self.assertEqual(cm.exception.code, 400)
+        cm.exception.close()
+
     @unittest.skipUnless(__import__("bridge").has_pymeshlab(), "needs pymeshlab")
     def test_instanced_simplified(self):
         job = self.req("api/run", {"topology": "octet", "method": "sdf", "a": 1, "rho": 0.25,

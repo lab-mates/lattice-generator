@@ -15,8 +15,8 @@ sys.path.insert(0, ROOT)
 import latticegen  # noqa: E402
 
 project = "latticegen"
-author = "jrr"
-copyright = "2026, jrr"
+author = "Joaquin Ramirez-Rico"
+copyright = "2026, Joaquin Ramirez-Rico, University of Seville"
 release = version = latticegen.__version__
 
 extensions = [

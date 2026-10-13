@@ -5,6 +5,7 @@ Command-line interface::
     python -m latticegen build gyroid --method tpms --sheet --a 3 --rho 0.25 --cells 4 4 4 -o gyr.stl
     python -m latticegen build bcc --graded 0.15 0.40 --cells 4 4 8 -o graded.stl
     python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 -o cube.stl
+    python -m latticegen build octet --method struts --plates both --plate-thickness 1 -o test.3mf
     python -m latticegen list
     python -m latticegen check part.stl --pixel 0.05 --layer 0.05
     python -m latticegen simplify part.stl --edge-length 0.05 -o part_lean.stl
@@ -27,7 +28,9 @@ def _build(args):
                     rho=args.rho, graded=args.graded, cells=args.cells, smooth=args.smooth,
                     node_comp=args.node_comp, sheet=args.sheet, instanced=args.instanced,
                     seam_spacing=args.seam_spacing, edge_length=args.edge_length,
-                    remesh=args.remesh, sides=args.sides, node=args.node, repair=args.repair,
+                    remesh=args.remesh, sides=args.sides, node=args.node,
+                    plates=args.plates, plate_thickness=args.plate_thickness,
+                    plate_size=args.plate_size, repair=args.repair,
                     islands=args.remove_islands,
                     check=args.check, pixel=args.pixel, layer=args.layer, verbose=args.verbose)
     except ValueError as e:
@@ -71,7 +74,10 @@ def _simplify(args):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="latticegen", description="periodic lattices for 3D printing")
+    from . import __version__, CREDIT
+    p = argparse.ArgumentParser(prog="latticegen", description="periodic lattices for 3D printing",
+                                epilog=f"latticegen {__version__}, {CREDIT}")
+    p.add_argument("--version", action="version", version=f"latticegen {__version__} ({CREDIT})")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("build", help="generate a lattice block and write a mesh")
@@ -104,6 +110,11 @@ def main(argv=None):
     b.add_argument("--node", default="union", choices=["union", "hull", "round"],
                    help="struts: joint shape: union (strut-sized, needs manifold3d), hull "
                         "(convex hull of the strut rings, larger) or round (rounded bulge)")
+    b.add_argument("--plates", default="none", choices=["none", "bottom", "top", "both"],
+                   help="weld solid plates to the bottom and/or top of the block")
+    b.add_argument("--plate-thickness", type=float, default=1.0, help="plate thickness (mm)")
+    b.add_argument("--plate-size", type=float, default=1.2,
+                   help="plate side over block side, >= 1 (1.2 = 20%% larger, centred)")
     b.add_argument("--repair", action="store_true")
     b.add_argument("--remove-islands", action="store_true",
                    help="drop floating slivers (e.g. corners cut off at the block boundary)")

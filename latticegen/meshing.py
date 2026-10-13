@@ -13,11 +13,21 @@ import inspect
 import warnings
 
 import numpy as np
-from skimage.measure import marching_cubes
+from skimage.measure import marching_cubes as _marching_cubes
 
 from .field import UnitField
 from .mesh import LatticeMesh
 from .meshops import weld
+
+
+def marching_cubes(volume, level):
+    """scikit-image's marching cubes, without the NumPy >= 2.5 deprecation
+    warning that scikit-image <= 0.26 raises (it sets ``array.shape`` on its
+    lookup tables) once per call."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Setting the shape on a NumPy array",
+                                category=DeprecationWarning)
+        return _marching_cubes(volume, level=level)
 
 
 def _as_fields(fields):

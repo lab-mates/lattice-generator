@@ -1,6 +1,6 @@
 // Runs Python (Pyodide + latticegen) off the main thread.
-// in : {type: "init", base}  |  {type: "run", params}
-// out: {type: "status"|"log"|"ready"|"result"|"error", ...}
+// in : {type: "init", base}  |  {type: "run", params}  |  {type: "export", stl, format, title}
+// out: {type: "status"|"log"|"ready"|"result"|"exported"|"error", ...}
 import { registerManifold } from "./manifold-backend.js";
 
 let py = null;
@@ -44,10 +44,24 @@ function run(params) {
   post({ type: "result", meta, verts: v, faces: f, stl }, [v.buffer, f.buffer, stl.buffer]);
 }
 
+// re-encode a finished STL (sent back by the page, so it is not kept twice)
+function exportAs(stl, format, title) {
+  const src = "/tmp/export.stl", dst = `/tmp/export.${format}`;
+  py.FS.writeFile(src, new Uint8Array(stl));
+  try {
+    bridge.convert(src, dst, title);
+    const data = py.FS.readFile(dst);
+    post({ type: "exported", format, data }, [data.buffer]);
+  } finally {
+    for (const f of [src, dst]) { try { py.FS.unlink(f); } catch { /* not written */ } }
+  }
+}
+
 self.onmessage = async ({ data }) => {
   try {
     if (data.type === "init") await init(data.base);
     else if (data.type === "run") run(data.params);
+    else if (data.type === "export") exportAs(data.stl, data.format, data.title);
   } catch (e) {
     const text = String(e && e.message ? e.message : e).trim();
     post({ type: "error", text: text.split("\n").filter(Boolean).pop(), detail: text });

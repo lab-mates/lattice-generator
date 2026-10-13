@@ -31,10 +31,10 @@ import warnings
 from collections import defaultdict
 
 import numpy as np
-from skimage.measure import marching_cubes
 
 from .field import UnitField
 from .mesh import LatticeMesh
+from .meshing import marching_cubes
 from .meshops import weld, mesh_volume, mesh_area, open_edges as _open_edges
 
 

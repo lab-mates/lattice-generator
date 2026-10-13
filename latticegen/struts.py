@@ -691,7 +691,8 @@ def mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6,
                 strut_radius=r, node_radius=R, min_thickness=2.0 * r * np.cos(np.pi / sides),
                 sides=sides, node=node, n_struts=int(g.n_struts), n_nodes=int(len(g.nodes)),
                 bulk_density=(float(rho) if rho is not None else None), analytic_volume=vol,
-                topology=sk.name, n_caps=n_cap)
+                topology=sk.name, n_caps=n_cap,
+                node_z=(float(g.nodes[:, 2].min()), float(g.nodes[:, 2].max())))
     mesh = LatticeMesh(verts.astype(np.float32), faces, info=info)
     if verbose:
         print(f"  {mesh.n_faces:,} faces, volume {vol:.6g}")

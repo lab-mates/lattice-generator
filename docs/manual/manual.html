@@ -87,6 +87,7 @@
   dt { font-weight: 650; margin-top: 2.2mm; }
   dd { margin: 0.5mm 0 0 6mm; }
   .areas { counter-reset: area; }
+  code { hyphens: manual; }
 </style>
 </head>
 <body>
@@ -97,6 +98,7 @@
   <div class="title">
     <h1>Lattice Generator</h1>
     <p class="sub">User manual for the Windows desktop app</p>
+    <p class="meta">Joaquin Ramirez-Rico, University of Seville &nbsp;·&nbsp; <a href="https://mates-lab.es/">mates-lab.es</a></p>
     <p class="meta">Version 1.0 &nbsp;·&nbsp; October 2026</p>
   </div>
 </section>
@@ -109,7 +111,7 @@
     <li><a href="#start"><span class="no">2</span>Installing and starting</a></li>
     <li><a href="#first"><span class="no">3</span>Your first lattice</a></li>
     <li><a href="#window"><span class="no">4</span>The window</a></li>
-    <li><a href="#shape"><span class="no">5</span>Shape, cell, density and block</a></li>
+    <li><a href="#shape"><span class="no">5</span>Shape, cell, density, block and plates</a></li>
     <li><a href="#more"><span class="no">6</span>More settings</a></li>
     <li><a href="#generate"><span class="no">7</span>Generating</a></li>
     <li><a href="#view"><span class="no">8</span>The 3D view</a></li>
@@ -121,7 +123,7 @@
 
   <h2>About this manual</h2>
   <p>This manual is for people who print lattices on a resin (DLP or LCD) printer
-  and want STL files without writing code. It explains every setting of the
+  and want STL or 3MF files without writing code. It explains every setting of the
   Lattice Generator desktop app, what the results mean, and what to do when
   something goes wrong. Chapter 3 gets you from zero to a saved STL file in a
   few minutes; the later chapters are for reference.</p>
@@ -131,6 +133,8 @@
   <p>The same app also runs in a web browser. The browser version works the same
   way but has no <span class="ui">Lighter mesh</span> settings (section 6.4) and
   handles smaller blocks.</p>
+  <p>Lattice Generator and this manual are by Joaquin Ramirez-Rico, University of
+  Seville (<a href="https://mates-lab.es/">mates-lab.es</a>).</p>
 </section>
 
 <!-- ============================================================ 1 -->
@@ -139,7 +143,8 @@
   <p>A lattice is a solid made of one small cell repeated in three directions, like
   a crystal or a scaffold. Lattice Generator builds such a block from a few
   numbers (the cell type, the cell size, how dense it should be and how many
-  cells) and saves it as an STL file that any slicer can open.</p>
+  cells) and saves it as an STL or 3MF file that any slicer can open. Solid plates
+  can be added to the top and bottom, for example for compression tests.</p>
   <p>It makes four kinds of shape:</p>
   <div class="grid4">
     <figure><img src="img/shape-beams.jpg" alt="Octet lattice of straight beams"><figcaption><strong>Beams.</strong> Straight beams of exact thickness. Fastest, smallest files.</figcaption></figure>
@@ -225,8 +230,9 @@
     <li>Drag with the left mouse button to turn the block, and use the wheel to
     zoom. Read the <span class="ui">Printability</span> tab below the view
     (chapter 9).</li>
-    <li>Press <span class="ui">Save STL</span>, choose a folder and a name, and
-    press <span class="ui">Save</span>. Open the file in your slicer.</li>
+    <li>Press <span class="ui">Save STL</span> (or <span class="ui">Save 3MF</span>),
+    choose a folder and a name, and press <span class="ui">Save</span>. Open the file
+    in your slicer.</li>
   </ol>
   <figure><img src="img/overview.jpg" alt="The app after generating a 3 x 3 x 3 octet block"><figcaption>Figure 3.1 The app after step 3. The Printability tab warns that the beams, 0.135 mm thick, are under 4 pixels of a 0.05 mm printer: fine for a test, but chapter 9 explains how to make them sturdier.</figcaption></figure>
   <p>The block measures 3.14 mm rather than 3.00 mm: with Beams, the joints on the
@@ -241,9 +247,10 @@
   <dl>
     <dt>Settings, on the left</dt>
     <dd>Everything that defines the lattice, from top to bottom: a starting
-    preset, the shape, the cell, the density, the block size, and a collapsible
-    <span class="ui">More settings</span> section. The panel scrolls if the window
-    is short.</dd>
+    preset, the shape, the cell, the density, the block size, the plates, and a
+    collapsible <span class="ui">More settings</span> section. The panel scrolls if
+    the window is short. The author and a link to the lab's website are under the
+    title; the link opens in your web browser.</dd>
     <dt>Estimate and Generate, at the bottom left</dt>
     <dd>A live estimate of the size, triangle count and file size, which updates
     as you type, and the <span class="ui">Generate</span> button. While a lattice is
@@ -251,7 +258,7 @@
     <dt>3D view, on the right</dt>
     <dd>The block on a millimetre grid. The status line is at the top left, the
     view settings at the top right, and the block size and the
-    <span class="ui">Save STL</span> button at the bottom.</dd>
+    <span class="ui">Save STL</span> and <span class="ui">Save 3MF</span> buttons at the bottom.</dd>
     <dt>Results, below the view</dt>
     <dd>Three tabs: <span class="ui">Printability</span>, <span class="ui">Mesh</span> and
     <span class="ui">Log</span> (chapter 9).</dd>
@@ -275,7 +282,7 @@
 
 <!-- ============================================================ 5 -->
 <section class="chapter" id="shape">
-  <h1><span class="no">5</span>Shape, cell, density and block</h1>
+  <h1><span class="no">5</span>Shape, cell, density, block and plates</h1>
 
   <h2>5.1 Shape</h2>
   <div class="side">
@@ -373,6 +380,35 @@
       <span class="ui">in z</span> cells stacked in printed layers.</p>
     </div>
   </div>
+
+  <h2>5.5 Plates</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/plates.png" alt="The Plates settings"></figure>
+    <div>
+      <p>Solid plates on the <span class="ui">Bottom</span>, the <span class="ui">Top</span>,
+      or <span class="ui">Top and bottom</span> of the block, for example as flat
+      loading faces for compression tests. <span class="ui">None</span> (the default)
+      adds nothing.</p>
+      <p><span class="ui">Thickness</span> is in millimetres. <span class="ui">Size</span> is the
+      length of each plate side as a percentage of the block side, from 100 % (the
+      plate matches the block) to 200 %; the default, 120 %, overhangs the block by
+      10 % on every side. The plate is centred under (or over) the block.</p>
+    </div>
+  </div>
+  <p>The plates are joined to the lattice, so the saved file holds a single solid
+  object. With <span class="ui">Beams</span>, the outermost joints stick out past the
+  cells by half a beam; a plate placed below them would only touch each joint at
+  one point. So the plate faces pass through the centres of those joints instead,
+  and the joints and the beams lying in that plane are half embedded in the plate.
+  With the other shapes the block ends in flat faces, and the plates are placed
+  against them. The estimate and the block size include the plates; the solid
+  fraction in the reports is that of the lattice alone.</p>
+  <div class="grid2">
+    <figure><img src="img/plates-view.jpg" alt="Octet beams with plates on top and bottom"><figcaption>Figure 5.1 4 × 4 × 3 octet beams with 1 mm plates on both ends, 120 %.</figcaption></figure>
+    <figure><img src="img/plates-gyroid.jpg" alt="Gyroid sheet on a bottom plate"><figcaption>Figure 5.2 2 × 2 × 2 gyroid sheet on a bottom plate.</figcaption></figure>
+  </div>
+  <p>For non-cubic cells with angles other than 90°, the plates follow the
+  slanted footprint of the block (a parallelogram).</p>
 </section>
 
 <!-- ============================================================ 6 -->
@@ -602,12 +638,17 @@
   timings. When something fails, the details are there; include them if you ask
   for help.</p>
 
-  <h2>Saving the STL file</h2>
-  <figure class="ui-crop"><img src="img/save.png" alt="Block size and Save STL button"></figure>
+  <h2>Saving the file</h2>
+  <figure class="ui-crop"><img src="img/save.png" alt="Block size and the Save STL and Save 3MF buttons"></figure>
   <p>Press <span class="ui">Save STL</span>; the button shows the file size. A
   Windows <span class="ui">Save as</span> dialog opens with a suggested name such
   as <code>octet_3x3x3.stl</code>. The file is a binary STL in millimetres, ready
   for any slicer. Large files take a moment to copy.</p>
+  <p><span class="ui">Save 3MF</span> saves the same mesh as a 3MF file
+  (<code>octet_3x3x3.3mf</code>): one object, in millimetres, compressed to about a
+  fifth of the STL's size. The 3MF is written after you pick the file name, without
+  generating again; for very large blocks this takes up to a minute, and the status
+  line says <em>Writing the 3MF file…</em> meanwhile.</p>
   <p>Lay the block flat on the build plate in your slicer: its bottom face is
   exactly flat. Lattices are largely self-supporting, so a small block often
   prints without supports on a raft or directly on the plate; follow your
@@ -621,7 +662,9 @@
   <h3>A large uniform block for mechanical testing</h3>
   <p>Beams, Octet truss, cell 1 mm, solid fraction 20 %, 20 × 20 × 20 cells. In
   More settings, choose 6 sides if your slicer struggles with the 14 million
-  triangles (700 MB) of 12 sides. Check that the thinnest solid is at least 4 pixels.</p>
+  triangles (700 MB) of 12 sides. Check that the thinnest solid is at least 4 pixels.
+  For compression tests, add plates on the top and bottom (section 5.5), e.g.
+  1 mm thick at 120 %, and save as 3MF for a smaller file.</p>
 
   <h3>Thicker beams for a fine printer</h3>
   <p>If the Printability tab warns about thin beams, raise the solid fraction
@@ -673,13 +716,14 @@
   press <kbd>Enter</kbd>. In the window that opens, type:</p>
   <p><code>latticegen.exe selftest</code></p>
   <p>It builds one small example of every feature and prints <code>ok</code> or
-  <code>FAIL</code> for each, ending with <em>10/10 passed</em>. Send the output to
+  <code>FAIL</code> for each, ending with <em>11/11 passed</em>. Send the output to
   whoever supports the app.</p>
 
   <h2>Command line</h2>
   <p>The same folder contains <code>latticegen.exe</code>, which accepts every
   option of the app as text, for scripts and batch jobs. For example:</p>
-  <p><code>latticegen.exe build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 --sides 12 --check -o octet.stl</code></p>
+  <p><code>latticegen.exe build octet --method struts --rho 0.2 --cells 20 20 20 --check -o octet.stl</code></p>
+  <p><code>latticegen.exe build octet --method struts --cells 10 10 10 --plates both -o octet.3mf</code></p>
   <p>Type <code>latticegen.exe build --help</code> for the full list.</p>
 </section>
 
@@ -698,7 +742,9 @@
     <dt>Watertight</dt><dd>A mesh with no holes, so it has a clear inside and outside. Slicers need this.</dd>
     <dt>Seam</dt><dd>When one cell is built and repeated, the edges where copies meet.</dd>
     <dt>Pixel, layer</dt><dd>The smallest step of a resin printer: the pixel across the build plate, the layer in height.</dd>
+    <dt>Plate</dt><dd>A solid slab joined to the bottom or top of the block (section 5.5).</dd>
     <dt>STL</dt><dd>The standard file format for 3D printing, read by every slicer.</dd>
+    <dt>3MF</dt><dd>A newer 3D printing format: a compressed file that stores the mesh in millimetres. Most current slicers read it.</dd>
   </dl>
 </section>
 

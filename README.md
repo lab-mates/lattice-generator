@@ -3,6 +3,8 @@
 Periodic lattice structures for 3D printing (DLP / resin), as one Python
 package.
 
+Joaquin Ramirez-Rico, University of Seville — [mates-lab.es](https://mates-lab.es/)
+
     UnitCell  →  Skeleton or TPMS  →  UnitField  →  LatticeMesh  →  STL
 
 * **Three ways to build the unit-cell field**
@@ -23,6 +25,9 @@ package.
   isotropic or anisotropic interiors for field-based blocks; quadric
   decimation / isotropic remeshing / repair / island removal for everything
   else.
+* **Plates** for mechanical tests: solid plates welded to the bottom and/or
+  top of any block (`add_plates`), one watertight object.
+* **Export** to binary STL or 3MF, both streamed (any size).
 * **DLP printability report**: strut, wall and pore sizes in pixels and
   layers, watertightness, floating parts, file size, resin mass.
 * Command-line interface, and two GUIs for colleagues who do not use Python,
@@ -69,6 +74,10 @@ lean.export("octet_8x8x8.stl")
 cube = lg.mesh_struts(lg.UnitCell.cubic(1.0), "octet", rho=0.20, cells=(20, 20, 20))
 cube.export("octet_2cm.stl")
 
+# 1 mm plates on both ends, 20 % wider than the block, as one 3MF object
+plated = lg.add_plates(cube, lg.UnitCell.cubic(1.0), (20, 20, 20), "both", thickness=1.0, size=1.2)
+plated.export("octet_2cm_plates.3mf")
+
 print(mesh.report())
 print(lg.format_report(lg.dlp_report(mesh, field, 0.30, pixel_mm=0.05, layer_mm=0.05)))
 ```
@@ -80,6 +89,8 @@ python -m latticegen build octet --a 2 --rho 0.3 --cells 3 3 3 --smooth 0.02 \
        --edge-length 0.05 --check -o octet_3x3x3.stl
 python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 \
        --check -o octet_2cm.stl
+python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 10 10 10 \
+       --plates both --plate-thickness 1 -o octet_plates.3mf
 ```
 
 ## Documentation
@@ -115,8 +126,9 @@ latticegen/
   struts.py      mesh_struts: explicit n-gon prisms + strut-sized (manifold3d) or hull nodes, closed-form density
   remesh.py      decimate / simplify / remesh_isotropic / repair / remove_islands
   mesh.py        LatticeMesh: diagnostics, export
-  meshops.py     pure-numpy weld / watertight / volume / STL IO
+  meshops.py     pure-numpy weld / watertight / volume / STL and 3MF IO
   printing.py    DLP report and grid recommendation
+  plates.py      add_plates: solid plates welded to the block (manifold3d union)
   app.py         build(): one-call lattice build shared by the CLI and the web app
   cli.py         command line
 webapp/          browser GUI (Pyodide + Three.js); see webapp/README.md

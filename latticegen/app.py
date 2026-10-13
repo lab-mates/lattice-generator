@@ -74,6 +74,7 @@ def default_grid(cell, pixel, instanced=False) -> int:
 def build(topology, method="auto", a=1.0, cell=None, N=0, rho=0.3, graded=None,
           cells=(3, 3, 3), smooth=0.02, node_comp=0.5, sheet=False, instanced=False,
           seam_spacing=0.0, edge_length=0.0, remesh="isotropic", sides=6, node="union",
+          plates="none", plate_thickness=1.0, plate_size=1.2,
           repair=False, islands=False, check=False, pixel=0.05, layer=0.05, verbose=False,
           log=print) -> BuildResult:
     """Build a lattice block in one call, with the options of the CLI and GUIs.
@@ -121,6 +122,13 @@ def build(topology, method="auto", a=1.0, cell=None, N=0, rho=0.3, graded=None,
         ``'struts'`` polygon sides.
     node : {'union', 'hull', 'round'}, optional
         ``'struts'`` joint shape.
+    plates : {'none', 'bottom', 'top', 'both'}, optional
+        Solid plates welded to the block (:func:`~latticegen.add_plates`),
+        added after simplification, repair and island removal.
+    plate_thickness : float, optional
+        Plate thickness (mm).
+    plate_size : float, optional
+        Plate side over block footprint side, >= 1 (centred).
     repair : bool, optional
         Run :func:`~latticegen.repair` at the end.
     islands : bool, optional
@@ -202,6 +210,15 @@ def build(topology, method="auto", a=1.0, cell=None, N=0, rho=0.3, graded=None,
     c = mesh.check()
     if islands and c["components"] > 1:
         mesh = mesh.remove_islands(verbose=True)
+        c = None
+    # plates last: slivers cut off at the block faces are gone, so none gets welded on
+    if plates and plates != "none":
+        t0 = time.time()
+        mesh = lg.add_plates(mesh, cell, cells, plates, plate_thickness, plate_size)
+        log(f"plates ({plates}, {plate_thickness:g} mm, {plate_size * 100:.0f} %): "
+            f"{mesh.n_faces:,} faces  ({time.time() - t0:.1f} s)")
+        c = None
+    if c is None:
         c = mesh.check()
     report = mesh.report(c)
     log(report)
