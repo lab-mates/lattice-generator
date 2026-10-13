@@ -20,8 +20,29 @@ from .mesh import LatticeMesh
 
 def recommend_grid(cell, pixel_mm: float, oversample: float = 2.0, minimum: int = 32,
                    multiple_of: int = 8) -> int:
-    """Grid size N so that the field voxel is at most ``pixel_mm/oversample``
-    along the shortest cell vector (rounded up to a multiple of 8)."""
+    """Grid size ``N`` whose voxel is at most ``pixel_mm / oversample``.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+    pixel_mm : float
+        Printer pixel pitch (mm).
+    oversample : float, optional
+        Voxels per pixel along the shortest cell edge.
+    minimum : int, optional
+        Smallest N returned.
+    multiple_of : int, optional
+        N is rounded up to a multiple of this.
+
+    Returns
+    -------
+    int
+
+    See Also
+    --------
+    latticegen.app.default_grid : the GUI and CLI default (half a pixel,
+        N >= 80; a quarter pixel when instancing).
+    """
     cell = as_cell(cell)
     N = int(np.ceil(cell.a_min / (pixel_mm / oversample)))
     N = max(minimum, int(np.ceil(N / multiple_of)) * multiple_of)
@@ -32,21 +53,49 @@ def dlp_report(mesh: LatticeMesh | None = None, field: UnitField | None = None, 
                pixel_mm: float = 0.05, layer_mm: float = 0.05, min_feature_px: float = 4.0,
                min_pore_mm: float | None = None, resin_density_g_cm3: float = 1.15,
                shrinkage_pct: float = 0.0, check: dict | None = None) -> dict:
-    """Printability summary for a DLP job (all lengths in mm).
+    """Printability summary for a DLP job; all lengths in mm.
 
-    mesh            : the block to print (optional; gives size, volume, faces).
-    field, rho      : the unit field and density (optional; gives strut /
-                      wall / pore sizes from the periodic distance transform).
-    pixel_mm        : projector pixel pitch in the build plane.
-    layer_mm        : layer thickness.
-    min_feature_px  : struts / walls thinner than this many pixels are flagged.
-    min_pore_mm     : pores narrower than this are flagged (default 4 px).
-    shrinkage_pct   : expected linear shrinkage (post-cure / pyrolysis); the
-                      as-designed sizes are scaled to show the final part.
-    check           : a ``mesh.check()`` result to reuse (it is the costly part
-                      on multi-million-face meshes).
+    Combines what is known about the part: mesh size and quality, feature
+    sizes from the field's distance transform (or, for
+    :func:`mesh_struts` meshes, from the construction), connectivity, resin
+    mass, and warnings about thin struts, narrow pores, trapped resin,
+    floating pieces and heavy files.
 
-    Returns a dict; ``print(format_report(rep))`` for a readable summary.
+    Parameters
+    ----------
+    mesh : LatticeMesh, optional
+        The block to print.
+    field : UnitField, optional
+        The unit field; with ``rho``, gives strut, wall and pore sizes.
+    rho : float, optional
+        Density used with ``field``.
+    pixel_mm : float, optional
+        Projector pixel pitch in the build plane.
+    layer_mm : float, optional
+        Layer thickness.
+    min_feature_px : float, optional
+        Struts and walls thinner than this many pixels are flagged.
+    min_pore_mm : float, optional
+        Pore throats narrower than this are flagged; default 4 pixels.
+    resin_density_g_cm3 : float, optional
+        For the mass estimate.
+    shrinkage_pct : float, optional
+        Expected linear shrinkage (post-cure, pyrolysis); sizes are reported
+        for the final part.
+    check : dict, optional
+        A :meth:`LatticeMesh.check` result to reuse; it is the costly part on
+        multi-million-face meshes.
+
+    Returns
+    -------
+    dict
+        ``warnings`` (list of str) plus the measured values; pass it to
+        :func:`format_report` for text.
+
+    Examples
+    --------
+    >>> rep = lg.dlp_report(mesh, field, 0.3, pixel_mm=0.05)     # doctest: +SKIP
+    >>> print(lg.format_report(rep))                             # doctest: +SKIP
     """
     rep = {"pixel_mm": pixel_mm, "layer_mm": layer_mm, "warnings": []}
     warn = rep["warnings"].append
@@ -130,6 +179,16 @@ def dlp_report(mesh: LatticeMesh | None = None, field: UnitField | None = None, 
 
 
 def format_report(rep: dict) -> str:
+    """Readable text of a :func:`dlp_report` result.
+
+    Parameters
+    ----------
+    rep : dict
+
+    Returns
+    -------
+    str
+    """
     L = [f"DLP check  (pixel {rep['pixel_mm']} mm, layer {rep['layer_mm']} mm)"]
     if "grid_N" in rep:
         L.append(f"  field grid N={rep['grid_N']}, voxel {rep['voxel_mm']:.4f} mm")

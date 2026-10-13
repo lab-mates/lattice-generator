@@ -51,32 +51,74 @@ def _rho_mode(rho):
 
 def mesh_stack(fields, rho=0.3, cells=(1, 1, 1), cell_map=None, slab_cells=1,
                exact_density=True, threshold=None, verbose=False) -> LatticeMesh:
-    """Mesh an (nx, ny, nz) block of unit cells.
+    """Mesh an (nx, ny, nz) block of unit cells with marching cubes.
 
-    fields   : a UnitField, or a list of UnitFields (same N) -- the lattice
-               types available to ``cell_map``.
-    rho      : target volume fraction.  One of
-               * a scalar,
-               * an (nx, ny, nz) array (per-cell density),
-               * ``rho(zeta)``: callable of the fractional stack height
-                 zeta = z / (nz*|a3|) in [0, 1] -- continuous z gradation,
-               * ``rho(x, y, z)``: callable of CARTESIAN coordinates (cell
-                 length units, block origin at 0) -- arbitrary 3-D gradation.
-               Callables must be numpy-vectorised and elementwise (the same
-               input value must always give the same output, otherwise slab
-               joints will not weld).  Values must stay inside (0, 1).
-    cell_map : (nx, ny, nz) int array selecting the field index of each cell.
-    slab_cells : cells per z-slab processed at a time (memory control);
-               peak memory ~ (nx*N)(ny*N)(slab_cells*N) x 4 bytes.
-    exact_density : for scalar / per-cell rho, calibrate each isovalue on
-               the meshed unit-cell volume (see UnitField.calibrated_threshold)
-               instead of the voxel quantile.  Callable rho always uses the
-               quantile mapping.
-    threshold : advanced -- give the isovalue(s) directly (scalar or
-               (nx, ny, nz) array) instead of rho.
+    The general field mesher: uniform, per-cell or continuously graded
+    density, and several lattice types in one block. The block is processed
+    in z-slabs to bound memory, closed with exactly flat caps on all six
+    faces, and welded exactly, so the result is watertight.
 
-    Returns a closed, welded :class:`LatticeMesh` with outward normals, in
-    the cartesian units of the cell.  ``mesh.info`` holds the thresholds.
+    Parameters
+    ----------
+    fields : UnitField or list of UnitField
+        The lattice types available to ``cell_map``; all must have the same
+        ``N``.
+    rho : float, array_like or callable, optional
+        Target volume fraction, strictly inside (0, 1):
+
+        * a scalar (uniform);
+        * an (nx, ny, nz) array, one density per cell;
+        * ``rho(zeta)``, a function of the fractional height
+          ``zeta = z / (nz |a3|)`` in [0, 1], for a gradient along the build
+          direction;
+        * ``rho(x, y, z)``, a function of cartesian position (block origin at
+          0), for any 3-D gradation.
+
+        Callables must be numpy-vectorised and elementwise (the same input
+        value must always give the same output), or the slab joints will not
+        weld.
+    cells : tuple of 3 int, optional
+        Block size in cells.
+    cell_map : array_like of int, shape (nx, ny, nz), optional
+        Index into ``fields`` for every cell. Two types connect only where
+        both are solid on the shared face (fcc inside octet is seamless; an
+        octet shell around a gyroid is not).
+    slab_cells : int, optional
+        Cell layers processed at a time. Peak memory is about
+        ``(nx N)(ny N)(slab_cells N) x 4`` bytes.
+    exact_density : bool, optional
+        For scalar and per-cell ``rho``, calibrate each isovalue on the meshed
+        unit-cell volume (:meth:`UnitField.calibrated_threshold`) instead of
+        the voxel quantile. Callable densities always use the quantile.
+    threshold : float or array_like, optional
+        Give the isovalue(s) directly instead of ``rho`` (advanced).
+    verbose : bool, optional
+        Print progress.
+
+    Returns
+    -------
+    LatticeMesh
+        Closed and welded, with outward normals, in the cartesian units of
+        the cell. ``info`` holds the thresholds and ``box_volume``.
+
+    Warns
+    -----
+    RuntimeWarning
+        If the mesh has more than one component (incompatible cell types, or
+        a density low enough to break struts).
+
+    See Also
+    --------
+    mesh_instanced : much leaner meshes of uniform, single-type blocks.
+    mesh_struts : explicit beams, no field at all.
+
+    Examples
+    --------
+    >>> import latticegen as lg
+    >>> fld = lg.sdf_field(lg.UnitCell.cubic(2.0), "bcc", N=48)
+    >>> graded = lg.mesh_stack(fld, rho=lambda z: 0.15 + 0.25 * z, cells=(2, 2, 4))
+    >>> graded.is_watertight
+    True
     """
     fields = _as_fields(fields)
     N = fields[0].N

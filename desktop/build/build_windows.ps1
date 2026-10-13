@@ -21,6 +21,9 @@ Write-Host "`n== self-test of the bundle"
 & "$app\latticegen.exe" selftest "$Work\selftest.txt"
 $selftest = $LASTEXITCODE
 
+# user manual next to the exe
+Copy-Item "$Work\src\docs\manual\LatticeGenerator-User-Manual.pdf" "$app\" -Force
+
 $zip = "$Work\LatticeGenerator-win64-$Version.zip"
 Remove-Item $zip -ErrorAction SilentlyContinue
 Push-Location "$Work\dist"

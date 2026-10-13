@@ -19,6 +19,8 @@ cp "$REPO"/latticegen/*.py "$SRC/latticegen/"
 cp "$REPO"/desktop/*.py "$SRC/desktop/"
 cp "$REPO"/desktop/build/{latticegen.spec,prune_pymeshlab.py,launch.py,cli_entry.py,icon.ico} "$SRC/desktop/build/"
 cp "$REPO/webapp/py/bridge.py" "$SRC/webapp/py/"
+mkdir -p "$SRC/docs/manual"
+cp "$REPO/docs/manual/LatticeGenerator-User-Manual.pdf" "$SRC/docs/manual/"
 (cd "$REPO/webapp/dist" && tar cf - --exclude=./pyodide --exclude=./latticegen.zip .) | (cd "$SRC/webapp/dist" && tar xf -)
 
 echo "== PyInstaller (Windows)"

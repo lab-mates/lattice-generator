@@ -77,7 +77,7 @@ def main(argv=None):
     b = sub.add_parser("build", help="generate a lattice block and write a mesh")
     b.add_argument("topology", help="strut topology (octet, bcc, ...) or TPMS name (gyroid, ...)")
     b.add_argument("--method", default="auto", choices=["auto", "sdf", "fourier", "tpms", "struts"],
-                   help="field type, or 'struts' for explicit prisms + hull nodes (leanest)")
+                   help="field type, or 'struts' for explicit beams (leanest)")
     b.add_argument("--a", type=float, default=1.0, help="cubic cell edge (mm)")
     b.add_argument("--cell", type=float, nargs=6, metavar=("A", "B", "C", "ALPHA", "BETA", "GAMMA"),
                    help="general cell parameters instead of --a")

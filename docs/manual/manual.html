@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lattice Generator user manual</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 20mm 22mm 22mm;
+    @bottom-right { content: counter(page); font: 9pt "Segoe UI", system-ui, sans-serif; color: #566170; }
+    @bottom-left { content: "Lattice Generator 1.0 user manual"; font: 9pt "Segoe UI", system-ui, sans-serif; color: #566170; }
+  }
+  @page cover { margin: 0; @bottom-right { content: none; } @bottom-left { content: none; } }
+
+  :root {
+    --ink: #1e2733; --soft: #566170; --line: #c9cfd6; --panel: #f3f5f7;
+    --resin: #e3a008; --resin-deep: #8a5d00; --uv: #5b3fd1;
+  }
+  html { background: #fff; }
+  body {
+    margin: 0; color: var(--ink);
+    font: 10.5pt/1.5 "Segoe UI", system-ui, sans-serif;
+    font-kerning: normal; hyphens: auto;
+  }
+  h1, h2, h3 { line-height: 1.2; break-after: avoid; }
+  h1 { font-size: 22pt; font-weight: 650; margin: 0 0 6mm; letter-spacing: -0.01em; }
+  h2 { font-size: 15pt; font-weight: 650; margin: 9mm 0 3mm; }
+  h3 { font-size: 11.5pt; font-weight: 650; margin: 6mm 0 1.5mm; }
+  p { margin: 0 0 2.6mm; orphans: 3; widows: 3; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1.2mm; }
+  strong { font-weight: 650; }
+  code, kbd, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 9.5pt; }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 1.2mm; background: #fff; }
+  .ui { font-weight: 650; }                       /* names of buttons and fields, as on screen */
+
+  .chapter { break-before: page; }
+  .chapter > h1 { border-top: 2.2mm solid var(--resin); padding-top: 4mm; }
+  .chapter > h1 .no { color: var(--resin-deep); margin-right: 3mm; }
+
+  figure { margin: 4mm 0 5mm; break-inside: avoid; }
+  figure img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 2px; }
+  figure.ui-crop img { background: var(--panel); }
+  figcaption { font-size: 9pt; color: var(--soft); margin-top: 1.6mm; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .grid2 figure, .grid3 figure, .grid4 figure { margin: 0; }
+  .side { display: grid; grid-template-columns: 62mm 1fr; gap: 6mm; align-items: start; }
+  .side figure { margin-top: 0; }
+
+  table { border-collapse: collapse; width: 100%; margin: 2mm 0 5mm; font-size: 9.5pt; break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 1.4mm 2.5mm 1.4mm 0; border-bottom: 1px solid var(--line); }
+  th { font-weight: 650; border-bottom: 1.5px solid var(--ink); }
+  td:first-child { white-space: nowrap; }
+  table.wrap td:first-child { white-space: normal; }
+
+  .note { border-left: 1.2mm solid var(--uv); background: #f4f2fd; padding: 2.5mm 4mm; margin: 3mm 0 4mm; break-inside: avoid; }
+  .note p:last-child { margin-bottom: 0; }
+
+  ol.steps { counter-reset: step; list-style: none; padding: 0; }
+  ol.steps > li { counter-increment: step; position: relative; padding-left: 10mm; margin-bottom: 3mm; }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: -0.3mm;
+    width: 6.5mm; height: 6.5mm; border-radius: 50%; background: var(--resin); color: #3d2800;
+    font-weight: 700; font-size: 9.5pt; display: grid; place-items: center;
+  }
+
+  /* cover */
+  .cover { page: cover; height: 297mm; position: relative; overflow: hidden; background: #e7eaee; }
+  .cover img { position: absolute; left: 0; top: 0; width: 210mm; height: 297mm; object-fit: cover; object-position: 50% 40%; }
+  .cover .title {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 14mm 22mm 18mm;
+    background: #fff; border-top: 2.2mm solid var(--resin);
+  }
+  .cover h1 { font-size: 34pt; margin: 0 0 2mm; border: 0; padding: 0; }
+  .cover .sub { font-size: 14pt; color: var(--soft); margin: 0 0 8mm; }
+  .cover .meta { font-size: 10pt; color: var(--soft); margin: 0; }
+
+  .toc { columns: 2; column-gap: 10mm; padding: 0; list-style: none; }
+  .toc li { break-inside: avoid; margin-bottom: 1.8mm; }
+  .toc a { color: inherit; text-decoration: none; }
+  .toc .no { display: inline-block; width: 7mm; color: var(--resin-deep); font-weight: 650; }
+
+  a { color: var(--uv); }
+  dl { margin: 0 0 4mm; }
+  dt { font-weight: 650; margin-top: 2.2mm; }
+  dd { margin: 0.5mm 0 0 6mm; }
+  .areas { counter-reset: area; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ cover -->
+<section class="cover">
+  <img src="img/cover.jpg" alt="">
+  <div class="title">
+    <h1>Lattice Generator</h1>
+    <p class="sub">User manual for the Windows desktop app</p>
+    <p class="meta">Version 1.0 &nbsp;·&nbsp; October 2026</p>
+  </div>
+</section>
+
+<!-- ============================================================ contents -->
+<section class="chapter">
+  <h1>Contents</h1>
+  <ol class="toc">
+    <li><a href="#about"><span class="no">1</span>What the app does</a></li>
+    <li><a href="#start"><span class="no">2</span>Installing and starting</a></li>
+    <li><a href="#first"><span class="no">3</span>Your first lattice</a></li>
+    <li><a href="#window"><span class="no">4</span>The window</a></li>
+    <li><a href="#shape"><span class="no">5</span>Shape, cell, density and block</a></li>
+    <li><a href="#more"><span class="no">6</span>More settings</a></li>
+    <li><a href="#generate"><span class="no">7</span>Generating</a></li>
+    <li><a href="#view"><span class="no">8</span>The 3D view</a></li>
+    <li><a href="#results"><span class="no">9</span>Results and saving</a></li>
+    <li><a href="#recipes"><span class="no">10</span>Recipes</a></li>
+    <li><a href="#trouble"><span class="no">11</span>Troubleshooting</a></li>
+    <li><a href="#glossary"><span class="no">12</span>Glossary</a></li>
+  </ol>
+
+  <h2>About this manual</h2>
+  <p>This manual is for people who print lattices on a resin (DLP or LCD) printer
+  and want STL files without writing code. It explains every setting of the
+  Lattice Generator desktop app, what the results mean, and what to do when
+  something goes wrong. Chapter 3 gets you from zero to a saved STL file in a
+  few minutes; the later chapters are for reference.</p>
+  <p>The screenshots show the app on Windows 11 with a 1 mm octet lattice unless
+  stated otherwise. Numbers in the app follow your Windows region settings, so
+  you may see a decimal comma (0,05) where this manual writes 0.05.</p>
+  <p>The same app also runs in a web browser. The browser version works the same
+  way but has no <span class="ui">Lighter mesh</span> settings (section 6.4) and
+  handles smaller blocks.</p>
+</section>
+
+<!-- ============================================================ 1 -->
+<section class="chapter" id="about">
+  <h1><span class="no">1</span>What the app does</h1>
+  <p>A lattice is a solid made of one small cell repeated in three directions, like
+  a crystal or a scaffold. Lattice Generator builds such a block from a few
+  numbers (the cell type, the cell size, how dense it should be and how many
+  cells) and saves it as an STL file that any slicer can open.</p>
+  <p>It makes four kinds of shape:</p>
+  <div class="grid4">
+    <figure><img src="img/shape-beams.jpg" alt="Octet lattice of straight beams"><figcaption><strong>Beams.</strong> Straight beams of exact thickness. Fastest, smallest files.</figcaption></figure>
+    <figure><img src="img/shape-rounded.jpg" alt="Octet lattice with rounded joints"><figcaption><strong>Rounded beams.</strong> Round beams with smooth fillets at the joints.</figcaption></figure>
+    <figure><img src="img/shape-organic.jpg" alt="Organic octet lattice"><figcaption><strong>Organic.</strong> Soft beams that swell gently at the joints.</figcaption></figure>
+    <figure><img src="img/shape-surfaces.jpg" alt="Gyroid sheet"><figcaption><strong>Surfaces.</strong> Smooth curved walls with no joints, such as the gyroid.</figcaption></figure>
+  </div>
+  <p>For each block the app also checks printability: whether the beams are thick
+  enough for your printer's pixel, whether resin can drain out, whether any
+  pieces float free, and how big the file will be.</p>
+  <p>Everything runs on your computer. The app needs no internet connection and
+  sends nothing anywhere.</p>
+</section>
+
+<!-- ============================================================ 2 -->
+<section class="chapter" id="start">
+  <h1><span class="no">2</span>Installing and starting</h1>
+  <h2>What you need</h2>
+  <ul>
+    <li>Windows 10 or 11, 64-bit. Nothing else needs to be installed: the app
+    brings its own engine, and the window uses Microsoft Edge WebView2, which is
+    part of Windows.</li>
+    <li>About 200 MB of disk space, plus room for the STL files you save.</li>
+    <li>Memory grows with the block. Ordinary blocks need well under 1 GB; a
+    block of tens of millions of triangles can need several GB.</li>
+  </ul>
+
+  <h2>Install</h2>
+  <ol class="steps">
+    <li>Copy <code>LatticeGenerator-win64-1.0.0.zip</code> to your computer.</li>
+    <li>Right-click the zip, choose <span class="ui">Extract All…</span>, and extract it
+    somewhere permanent, for example your Documents folder. Do not run the app
+    from inside the zip.</li>
+    <li>Open the extracted <code>LatticeGenerator</code> folder and double-click
+    <code>LatticeGenerator.exe</code>. You can make a desktop shortcut to it
+    (right-click → <span class="ui">Send to</span> → <span class="ui">Desktop</span>).
+    Keep the exe inside its folder: it needs the files next to it.</li>
+  </ol>
+
+  <h2>The first start</h2>
+  <p>The app is not signed with a commercial certificate, so the first time
+  Windows may show <span class="ui">Windows protected your PC</span>. Click
+  <span class="ui">More info</span>, then <span class="ui">Run anyway</span>. Windows
+  remembers this choice.</p>
+  <p>The window opens after a few seconds. The status line at the top of the 3D
+  view shows <span class="ui">Ready</span> when the engine has started, and the
+  <span class="ui">Generate</span> button becomes active.</p>
+
+  <div class="note">
+    <p><strong>If a message says the app is running in your web browser.</strong>
+    On a few computers the app window cannot open (for example when WebView2 has
+    been removed). The app then opens in your default web browser instead and
+    shows a small message box. Work in the browser as usual, and keep the message
+    box open: clicking <span class="ui">OK</span> quits the app.</p>
+  </div>
+
+  <h2>Quitting</h2>
+  <p>Close the window. Temporary files are deleted automatically; any left behind
+  by a crash are removed on a later start.</p>
+
+  <h2>Uninstalling</h2>
+  <p>Delete the <code>LatticeGenerator</code> folder. The app writes nothing else
+  to your computer apart from the STL files you save and its remembered
+  settings.</p>
+</section>
+
+<!-- ============================================================ 3 -->
+<section class="chapter" id="first">
+  <h1><span class="no">3</span>Your first lattice</h1>
+  <p>This builds a 3 × 3 × 3 block of 1 mm octet cells, 20 % solid, which prints
+  in a few minutes on most resin printers. These are the settings the app starts
+  with, so you only have to press two buttons.</p>
+  <ol class="steps">
+    <li>Under <span class="ui">Shape</span>, check that <span class="ui">Beams</span>
+    is selected and the <span class="ui">Lattice</span> is <span class="ui">Octet truss</span>.</li>
+    <li>Check the numbers: <span class="ui">Cell size</span> 1 mm,
+    <span class="ui">Solid fraction</span> 20 %, and 3 cells in x, y and z. The line
+    above the <span class="ui">Generate</span> button estimates the result:
+    <em>About 3.00 × 3.00 × 3.00 mm, ~56 thousand triangles, ~2.8 MB STL.</em></li>
+    <li>Press <span class="ui">Generate</span>. After about a second the block appears
+    in the 3D view, and the status line says how long it took and how many
+    triangles the mesh has.</li>
+    <li>Drag with the left mouse button to turn the block, and use the wheel to
+    zoom. Read the <span class="ui">Printability</span> tab below the view
+    (chapter 9).</li>
+    <li>Press <span class="ui">Save STL</span>, choose a folder and a name, and
+    press <span class="ui">Save</span>. Open the file in your slicer.</li>
+  </ol>
+  <figure><img src="img/overview.jpg" alt="The app after generating a 3 x 3 x 3 octet block"><figcaption>Figure 3.1 The app after step 3. The Printability tab warns that the beams, 0.135 mm thick, are under 4 pixels of a 0.05 mm printer: fine for a test, but chapter 9 explains how to make them sturdier.</figcaption></figure>
+  <p>The block measures 3.14 mm rather than 3.00 mm: with Beams, the joints on the
+  outer faces are complete, so the block is one beam thickness larger than the
+  number of cells times the cell size.</p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section class="chapter" id="window">
+  <h1><span class="no">4</span>The window</h1>
+  <p>The window has four areas (figure 3.1):</p>
+  <dl>
+    <dt>Settings, on the left</dt>
+    <dd>Everything that defines the lattice, from top to bottom: a starting
+    preset, the shape, the cell, the density, the block size, and a collapsible
+    <span class="ui">More settings</span> section. The panel scrolls if the window
+    is short.</dd>
+    <dt>Estimate and Generate, at the bottom left</dt>
+    <dd>A live estimate of the size, triangle count and file size, which updates
+    as you type, and the <span class="ui">Generate</span> button. While a lattice is
+    being built, a <span class="ui">Cancel</span> button appears next to it.</dd>
+    <dt>3D view, on the right</dt>
+    <dd>The block on a millimetre grid. The status line is at the top left, the
+    view settings at the top right, and the block size and the
+    <span class="ui">Save STL</span> button at the bottom.</dd>
+    <dt>Results, below the view</dt>
+    <dd>Three tabs: <span class="ui">Printability</span>, <span class="ui">Mesh</span> and
+    <span class="ui">Log</span> (chapter 9).</dd>
+  </dl>
+  <p>The app remembers your settings and view choices between sessions. To go
+  back to the defaults, pick a preset in <span class="ui">Start from</span>, or
+  change the values by hand.</p>
+
+  <h2>Start from: presets</h2>
+  <p>The <span class="ui">Start from</span> list fills in a complete set of settings
+  for a common job. Change anything afterwards; the list then shows
+  <span class="ui">Custom</span> again.</p>
+  <table>
+    <tr><th>Preset</th><th>What it sets</th></tr>
+    <tr><td>1 mm octet beams, 20 % dense, 20 × 20 × 20</td><td>A 2 cm cube of octet beams with hexagonal beams: about 10 million triangles and a 500 MB file. Builds in about 5 seconds.</td></tr>
+    <tr><td>Gyroid sheet, 2 mm cells, 25 % dense</td><td>Surfaces, gyroid, thin sheet, 2 × 2 × 2 cells.</td></tr>
+    <tr><td>Graded bcc, 15 % at the bottom to 40 % at the top</td><td>Rounded beams, bcc, 2 mm cells, 2 × 2 × 4 cells, density rising with height.</td></tr>
+    <tr><td>Octet with rounded joints, 2 mm cells</td><td>Rounded beams, octet, 30 %, 2 × 2 × 2 cells.</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ 5 -->
+<section class="chapter" id="shape">
+  <h1><span class="no">5</span>Shape, cell, density and block</h1>
+
+  <h2>5.1 Shape</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/shape.png" alt="The Shape settings"></figure>
+    <div>
+      <p>Choose how the lattice is built. A one-line hint under the buttons
+      describes each choice.</p>
+      <dl>
+        <dt>Beams</dt>
+        <dd>Every beam is a straight prism; joints are no thicker than the beams.
+        The beam thickness is exact. This is the fastest shape and makes the
+        smallest files: use it for large blocks and whenever you just need a
+        truss.</dd>
+        <dt>Rounded beams</dt>
+        <dd>Round beams whose joints are blended with a smooth fillet, so there
+        are no sharp inside corners. Traced from a 3D grid, so files are larger.</dd>
+        <dt>Organic</dt>
+        <dd>Soft, smooth beams that thicken gently at the joints, as in bone or
+        foam.</dd>
+        <dt>Surfaces</dt>
+        <dd>Triply periodic minimal surfaces such as the gyroid: curved walls
+        with no beams or joints. Pores are open in every direction, so resin
+        drains well.</dd>
+      </dl>
+    </div>
+  </div>
+
+  <h3>Lattice types</h3>
+  <p>With Beams, Rounded beams and Organic, the <span class="ui">Lattice</span> list
+  offers nine arrangements of beams. Connectivity is the number of beams that
+  meet at a joint: lattices with 12 or more are stiff (their beams are
+  stretched or compressed), those with fewer are softer (their beams bend).</p>
+  <table>
+    <tr><th>Lattice</th><th>Beams per cell</th><th>Connectivity</th><th>Description</th></tr>
+    <tr><td>Simple cubic</td><td>3</td><td>6</td><td>The cell edges. Has horizontal beams, which sag in printing.</td></tr>
+    <tr><td>Body-centred cubic (bcc)</td><td>8</td><td>8</td><td>Corners to the cell centre.</td></tr>
+    <tr><td>Face-centred cubic (fcc)</td><td>12</td><td>12 / 4</td><td>Corners to the face centres.</td></tr>
+    <tr><td>bcc with vertical posts</td><td>9</td><td>10</td><td>bcc plus vertical beams on the cell edges: stiffer along the build direction.</td></tr>
+    <tr><td>fcc with vertical posts</td><td>13</td><td>14</td><td>fcc plus vertical beams on the cell edges.</td></tr>
+    <tr><td>fcc and bcc combined</td><td>20</td><td>20</td><td>Both together.</td></tr>
+    <tr><td>Octet truss</td><td>24</td><td>12</td><td>The classic stiff, light truss. A good default.</td></tr>
+    <tr><td>Diamond</td><td>16</td><td>4</td><td>The bonds of a diamond crystal. Soft and open.</td></tr>
+    <tr><td>Kelvin foam cell</td><td>24</td><td>4</td><td>The edges of packed truncated octahedra, like an ideal foam.</td></tr>
+  </table>
+  <p>With Surfaces, the list is called <span class="ui">Surface</span> and offers
+  the gyroid, Schwarz P, Schwarz D, Schoen I-WP, Neovius, Lidinoid, Fischer–Koch S
+  and Split P. Tick <span class="ui">Thin sheet instead of solid channels</span> to
+  make a wall of even thickness that follows the surface, with both sides open;
+  without it, one side of the surface is filled solid.</p>
+
+  <h2>5.2 Cell</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/cell.png" alt="The Cell settings with Non-cubic cell open"></figure>
+    <div>
+      <p><span class="ui">Cell size</span> is the edge length of one cubic cell in
+      millimetres. Smaller cells give a finer lattice but thinner beams at the
+      same density.</p>
+      <p>Open <span class="ui">Non-cubic cell</span> to use a box or slanted cell:
+      edge lengths <em>a</em>, <em>b</em>, <em>c</em> along x, y and z, and the
+      angles α (between b and c), β (between a and c) and γ (between a and b),
+      each between 30° and 150°. While it is open, these values replace the cell
+      size. A tall cell (c larger than a and b), for example, stretches the
+      lattice along the build direction.</p>
+    </div>
+  </div>
+
+  <h2>5.3 Density</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/density-graded.png" alt="Graded density settings"></figure>
+    <div>
+      <p><span class="ui">Solid fraction</span> is the share of the block's volume
+      that is resin, from 1 to 90 %. It sets the beam thickness (or wall
+      thickness for Surfaces). Mechanical stiffness and weight grow with it.</p>
+      <p><span class="ui">Graded in height</span> makes the density change smoothly
+      from the <span class="ui">Bottom</span> value to the <span class="ui">Top</span>
+      value. The lattice keeps its layout; only the thickness changes. Grading is
+      not available with Beams, nor when repeating one cell (section 6.4); the
+      option is greyed out then.</p>
+      <p>The highest density depends on the lattice: beyond it, beams that do not
+      share a joint would run into each other. With Beams, an octet reaches 83 %;
+      fcc and bcc combined reaches about 60 %. The app tells you if you ask for
+      more.</p>
+    </div>
+  </div>
+
+  <h2>5.4 Block</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/block.png" alt="The Block settings"></figure>
+    <div>
+      <p>The number of cells along x, y and z (height), from 1 to 200 each. The
+      block size is the number of cells times the cell size. With Beams, the block
+      is about one beam thickness larger, because the joints on the outer faces
+      are complete.</p>
+      <p>z is the build direction: the block is built bottom-up, with its
+      <span class="ui">in z</span> cells stacked in printed layers.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section class="chapter" id="more">
+  <h1><span class="no">6</span>More settings</h1>
+  <p>Click <span class="ui">More settings</span> to open the section. The settings
+  shown depend on the shape.</p>
+
+  <h2>6.1 Beams: cross-section and joints</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/more-beams.png" alt="More settings for Beams"></figure>
+    <div>
+      <p><span class="ui">Beam cross-section</span> is the polygon of each beam:
+      6, 8, 12 or 16 sides. More sides look rounder and cost more triangles.
+      <strong>12 sides</strong> (the default) looks round at any practical size;
+      6 sides halves the file size for very large blocks.</p>
+      <p><span class="ui">Joints</span> sets the shape where beams meet:</p>
+      <dl>
+        <dt>Beam-sized (default)</dt>
+        <dd>The joint is no thicker than the beams. Best for most uses.</dd>
+        <dt>Hull (bigger, fewer triangles)</dt>
+        <dd>A faceted lump around the joint, up to twice the beam thickness, with
+        about half the triangles.</dd>
+        <dt>Rounded bulge</dt>
+        <dd>A round ball at every joint.</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="grid3">
+    <figure><img src="img/joint-union.jpg" alt="Beam-sized joints"><figcaption>Beam-sized: 3 546 triangles.</figcaption></figure>
+    <figure><img src="img/joint-hull.jpg" alt="Hull joints"><figcaption>Hull: 1 816 triangles.</figcaption></figure>
+    <figure><img src="img/joint-round.jpg" alt="Rounded bulge joints"><figcaption>Rounded bulge: 2 996 triangles.</figcaption></figure>
+  </div>
+  <p class="figcaption" style="font-size:9pt;color:var(--soft)">Figure 6.1 One octet cell, 1 mm, 20 %, 12 sides, with each joint type.</p>
+
+  <h2>6.2 Rounded beams: joint rounding</h2>
+  <p><span class="ui">Joint rounding</span> is the size of the fillet at the joints,
+  as a percentage of the cell size (default 2 %). 0 gives sharp joints. Larger
+  values make the joints visibly thicker very quickly; keep it between 1 and 3 %
+  if the beams should look even.</p>
+
+  <h2>6.3 Organic: joint slimming</h2>
+  <p>Organic beams naturally swell where they meet. <span class="ui">Joint
+  slimming</span>, from 0 (off, the default) to 1, takes material away from the
+  joints. 0.5 makes the joints about as thick as with sharp Rounded beams. Values
+  above about 0.6 can pinch the joints, and at low densities strong slimming can
+  break small pieces off: check the Printability tab.</p>
+
+  <h2>6.4 Detail and Lighter mesh</h2>
+  <div class="side">
+    <figure class="ui-crop"><img src="img/more-field.png" alt="More settings for Rounded beams with Lighter mesh"></figure>
+    <div>
+      <p>Rounded beams, Organic and Surfaces are traced from a 3D grid over one
+      cell. <span class="ui">Detail (grid points per cell)</span> is the number of
+      grid points along a cell edge. Leave it blank: the app picks enough detail
+      for your printer pixel (half a pixel per grid step, at least 80; a quarter
+      pixel when repeating one cell). The hint under the field shows the value
+      it will use. More detail means finer surfaces, much bigger files and longer
+      runs.</p>
+      <p>Traced meshes have many tiny triangles, far smaller than your printer
+      can resolve. The <span class="ui">Lighter mesh</span> settings make files
+      smaller without visible change.</p>
+      <dl>
+        <dt>Build one cell and repeat it, with matching seams</dt>
+        <dd>Traces and simplifies a single cell, then copies it across the block.
+        Much faster and much smaller for big blocks. Needs a uniform density and
+        one lattice type.</dd>
+        <dt>Seam points per cell edge</dt>
+        <dd>How finely the edges where cells meet are kept, default 50 (0.02 mm
+        for 1 mm cells). It must be between 4 and the grid detail.</dd>
+        <dt>Inside the cell</dt>
+        <dd><span class="ui">Even triangles</span> makes all triangles about the
+        same size. <span class="ui">Fewest triangles</span> lets them stretch along
+        the beams: 3 to 5 times fewer triangles.</dd>
+        <dt>Triangle size</dt>
+        <dd>The target triangle edge in mm. About one printer pixel is enough.
+        When repeating one cell, blank uses the seam spacing; otherwise blank
+        keeps every traced triangle, and a value simplifies the whole block after
+        it is traced.</dd>
+        <dt>Repair the mesh</dt>
+        <dd>Merges duplicate points, fills small holes and fixes the inside and
+        outside of the surface. The app's own meshes do not need it; it is there
+        for unusual settings that leave defects.</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="grid2">
+    <figure><img src="img/mesh-raw.jpg" alt="Traced mesh with triangle edges"><figcaption>Figure 6.2 One rounded-beam octet cell as traced: 122 960 triangles, 6.1 MB.</figcaption></figure>
+    <figure><img src="img/mesh-instanced.jpg" alt="Repeated-cell mesh with triangle edges"><figcaption>Figure 6.3 The same cell built once and repeated, 50 seam points, even triangles: 40 242 triangles, 2.0 MB.</figcaption></figure>
+  </div>
+
+  <h2>6.5 Printer and checks</h2>
+  <dl>
+    <dt>Printer pixel and Layer height</dt>
+    <dd>Your printer's pixel size in the build plane and its layer thickness, in
+    mm (default 0.05 mm each). They set the automatic detail and the
+    Printability check. Look up the pixel size in your printer's specification
+    (often called XY resolution).</dd>
+    <dt>Remove small floating pieces</dt>
+    <dd>On by default. Cutting a lattice at the block edges can leave tiny
+    slivers that are not connected to the rest; this deletes them, because they
+    would float in the resin vat.</dd>
+    <dt>Check printability</dt>
+    <dd>On by default. Fills the Printability tab after each run. Turn it off to
+    save a few seconds on very large blocks.</dd>
+  </dl>
+</section>
+
+<!-- ============================================================ 7 -->
+<section class="chapter" id="generate">
+  <h1><span class="no">7</span>Generating</h1>
+  <h2>The estimate</h2>
+  <p>Above the <span class="ui">Generate</span> button, the app estimates the block
+  size, the number of triangles and the STL file size as you change the
+  settings. Use it to stay within what your slicer handles: many slicers slow
+  down above a few million triangles. When a <span class="ui">Lighter mesh</span>
+  option is on, the estimate is for the mesh before simplification, so the final
+  file is smaller.</p>
+  <div class="grid3">
+    <figure class="ui-crop"><img src="img/estimate.png" alt="Normal estimate"><figcaption>A normal estimate.</figcaption></figure>
+    <figure class="ui-crop"><img src="img/estimate-large.png" alt="Large estimate"><figcaption>A very large block: the estimate turns orange.</figcaption></figure>
+    <figure class="ui-crop"><img src="img/estimate-invalid.png" alt="Invalid setting"><figcaption>A setting out of range: Generate is disabled.</figcaption></figure>
+  </div>
+  <p>If a value is out of range, the estimate names the field to check (for
+  example <em>Check the solid fraction (1 to 90 %)</em>), the field gets a red
+  border, and <span class="ui">Generate</span> stays disabled until it is
+  fixed.</p>
+
+  <h2>Generate and Cancel</h2>
+  <p>Press <span class="ui">Generate</span>. The status line counts the seconds, and
+  the <span class="ui">Log</span> tab shows the steps as they happen. Typical
+  times on a recent laptop:</p>
+  <table>
+    <tr><th>Job</th><th>Triangles</th><th>Time</th></tr>
+    <tr><td>Octet beams, 1 mm, 3 × 3 × 3, 12 sides</td><td>57 thousand</td><td>1 s</td></tr>
+    <tr><td>Octet beams, 1 mm, 20 × 20 × 20, 6 sides</td><td>10 million</td><td>5 s</td></tr>
+    <tr><td>Rounded octet, 2 mm, 2 × 2 × 2</td><td>0.9 million</td><td>5 s</td></tr>
+    <tr><td>Rounded octet, 1 mm, 3 × 3 × 3, one cell repeated</td><td>0.9 million</td><td>15 s</td></tr>
+  </table>
+  <p>For a very large block the app asks for confirmation first. Press
+  <span class="ui">Cancel</span> at any time to stop a run; the app is ready again
+  immediately.</p>
+</section>
+
+<!-- ============================================================ 8 -->
+<section class="chapter" id="view">
+  <h1><span class="no">8</span>The 3D view</h1>
+  <h2>Moving around</h2>
+  <table>
+    <tr><th>Action</th><th>Mouse</th></tr>
+    <tr><td>Turn</td><td>Drag with the left button</td></tr>
+    <tr><td>Zoom</td><td>Turn the wheel, or drag with the middle button</td></tr>
+    <tr><td>Move sideways</td><td>Drag with the right button</td></tr>
+  </table>
+  <p>The block sits on the build plate, centred, with z pointing up. Grid squares
+  are 1 mm, or 5 mm under large blocks. After each run the view is
+  reset to show the whole block.</p>
+  <p>Very large meshes (above 3 million triangles) are shown as a 3 × 3 × 3 corner
+  of the block so that the view stays responsive; the status line says so. The
+  saved file always contains the whole block.</p>
+
+  <h2>View settings</h2>
+  <div class="side">
+    <div>
+      <figure><img src="img/view-colors.jpg" alt="View settings with the colour list open"><figcaption>Figure 8.1 The view settings with the colour list open.</figcaption></figure>
+    </div>
+    <div>
+      <p>The bar at the top right of the view changes only how the block is
+      drawn, never the file.</p>
+      <dl>
+        <dt>Gouraud shading</dt>
+        <dd>Off: every triangle is drawn flat, which shows the facets. On: the
+        shading is blended across triangles, so curved beams look smooth. Sharp
+        edges, such as the rims of the flat block faces, look softened.</dd>
+        <dt>Triangle edges</dt>
+        <dd>Draws the outline of every triangle over the shaded surface, to
+        inspect the mesh. Works with either shading.</dd>
+        <dt>Colour</dt>
+        <dd>Opens a list of eight colours for the block. Pick one that resembles
+        your resin, or one that shows the shape best.</dd>
+      </dl>
+      <p>These choices are remembered.</p>
+    </div>
+  </div>
+  <div class="grid2">
+    <figure><img src="img/shading-flat.jpg" alt="Flat shading"><figcaption>Figure 8.2 Flat shading (default).</figcaption></figure>
+    <figure><img src="img/shading-smooth.jpg" alt="Gouraud shading"><figcaption>Figure 8.3 Gouraud shading.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================================================ 9 -->
+<section class="chapter" id="results">
+  <h1><span class="no">9</span>Results and saving</h1>
+  <h2>Printability</h2>
+  <figure><img src="img/tab-printability.png" alt="Printability tab"><figcaption>Figure 9.1 Printability report for the block of chapter 3.</figcaption></figure>
+  <p>The report lists, in millimetres:</p>
+  <dl>
+    <dt>feature sizes</dt>
+    <dd><code>strut_radius</code> is the beam radius, <code>node_radius</code> the
+    joint radius, <code>min_thickness</code> the thinnest solid anywhere. For
+    Surfaces and traced shapes it also gives <code>pore_radius</code> (the largest
+    open space) and <code>pore_throat</code> (the narrowest passage).</dd>
+    <dt>thinnest solid and narrowest pore</dt>
+    <dd>The same sizes in printer pixels and layers. For beams no pore is
+    measured, so it shows <code>nan</code>.</dd>
+    <dt>part</dt>
+    <dd>Outer size, number of layers, resin volume and resin mass (at
+    1.15 g/cm³).</dd>
+    <dt>mesh</dt>
+    <dd>Triangles, file size, whether the mesh is watertight (closed, as slicers
+    need) and how many separate pieces it has (should be 1).</dd>
+  </dl>
+  <p>Below that come <strong>warnings</strong>, each with a suggestion:</p>
+  <table class="wrap">
+    <tr><th>Warning</th><th>What to do</th></tr>
+    <tr><td>thinnest solid feature … (&lt; 4.0 px)</td><td>Beams or walls under 4 pixels may not cure or may break when washing. Raise the solid fraction or the cell size.</td></tr>
+    <tr><td>narrowest pore throat …</td><td>Uncured resin will be hard to wash out. Lower the density, use larger cells, or use a thin-sheet surface.</td></tr>
+    <tr><td>enclosed void pocket(s)</td><td>Closed cavities would trap resin. Change the density or lattice.</td></tr>
+    <tr><td>isolated solid piece(s), or several components</td><td>Parts of the lattice are not connected and would float in the vat. Raise the density, or keep <span class="ui">Remove small floating pieces</span> on.</td></tr>
+    <tr><td>more than 5 M faces</td><td>Many slicers become slow. Use Beams with fewer sides, fewer cells, or a Lighter mesh option.</td></tr>
+  </table>
+  <p>When everything is fine, the report ends with <em>no problems found</em>.</p>
+
+  <h2>Mesh and Log</h2>
+  <figure><img src="img/tab-mesh.png" alt="Mesh tab"><figcaption>Figure 9.2 The Mesh tab: vertex and triangle counts, watertightness, size, volume, edge lengths.</figcaption></figure>
+  <p>The <span class="ui">Log</span> tab records every step of the last run, with
+  timings. When something fails, the details are there; include them if you ask
+  for help.</p>
+
+  <h2>Saving the STL file</h2>
+  <figure class="ui-crop"><img src="img/save.png" alt="Block size and Save STL button"></figure>
+  <p>Press <span class="ui">Save STL</span>; the button shows the file size. A
+  Windows <span class="ui">Save as</span> dialog opens with a suggested name such
+  as <code>octet_3x3x3.stl</code>. The file is a binary STL in millimetres, ready
+  for any slicer. Large files take a moment to copy.</p>
+  <p>Lay the block flat on the build plate in your slicer: its bottom face is
+  exactly flat. Lattices are largely self-supporting, so a small block often
+  prints without supports on a raft or directly on the plate; follow your
+  printer's practice for larger parts.</p>
+</section>
+
+<!-- ============================================================ 10 -->
+<section class="chapter" id="recipes">
+  <h1><span class="no">10</span>Recipes</h1>
+
+  <h3>A large uniform block for mechanical testing</h3>
+  <p>Beams, Octet truss, cell 1 mm, solid fraction 20 %, 20 × 20 × 20 cells. In
+  More settings, choose 6 sides if your slicer struggles with the 14 million
+  triangles (700 MB) of 12 sides. Check that the thinnest solid is at least 4 pixels.</p>
+
+  <h3>Thicker beams for a fine printer</h3>
+  <p>If the Printability tab warns about thin beams, raise the solid fraction
+  (beams thicken roughly with its square root) or the cell size (beams scale
+  with it). For a 0.05 mm pixel, 4 pixels is 0.2 mm: a 1 mm octet reaches that
+  at about 40 %, a 1.5 mm octet at about 20 %.</p>
+
+  <h3>A smooth, filleted lattice of moderate size</h3>
+  <p>Rounded beams, Octet truss, cell 2 mm, 30 %, 3 × 3 × 3. In More settings,
+  tick <span class="ui">Build one cell and repeat it</span> and keep 50 seam
+  points. The file comes out several times smaller than without it.</p>
+
+  <h3>A density gradient</h3>
+  <p>Start from the preset <span class="ui">Graded bcc</span>, or choose Rounded
+  beams, then <span class="ui">Graded in height</span> with, for example, 15 % at
+  the bottom and 40 % at the top. If the file is too big, give a
+  <span class="ui">Triangle size</span> of one printer pixel.</p>
+
+  <h3>An open, easy-to-clean scaffold</h3>
+  <p>Surfaces, Gyroid, tick <span class="ui">Thin sheet</span>, cell 2 mm, 20 to 30 %.
+  Both sides of the wall are open channels, so resin drains from everywhere.</p>
+
+  <h3>A lattice stretched in height</h3>
+  <p>Open <span class="ui">Non-cubic cell</span> and set a = b = 1, c = 1.5, with all
+  angles 90°. Beams become steeper, which helps printing and makes the lattice
+  stiffer along z.</p>
+</section>
+
+<!-- ============================================================ 11 -->
+<section class="chapter" id="trouble">
+  <h1><span class="no">11</span>Troubleshooting</h1>
+  <table class="wrap">
+    <tr><th style="width:38%">Problem</th><th>Solution</th></tr>
+    <tr><td>“Windows protected your PC” when starting</td><td>Click <span class="ui">More info</span>, then <span class="ui">Run anyway</span> (chapter 2). This appears because the app has no paid code-signing certificate.</td></tr>
+    <tr><td>The app opens in a web browser with a message box</td><td>The app window could not open on this computer. Use the browser; keep the message box open while you work. If you need the window, ask IT whether Microsoft Edge WebView2 Runtime is installed.</td></tr>
+    <tr><td>Nothing happens when starting, or the window closes at once</td><td>Make sure you extracted the whole zip and run <code>LatticeGenerator.exe</code> from inside its folder. Then run the self-test (below).</td></tr>
+    <tr><td>Generate stays grey</td><td>The estimate line names the field to fix. While the app starts, Generate is grey until the status says Ready.</td></tr>
+    <tr><td>“Could not build the lattice: rho=… is not reachable”</td><td>The density is higher than the lattice allows with Beams: beams would run into each other. Lower the solid fraction, or use Rounded beams.</td></tr>
+    <tr><td>“The computer ran out of memory”</td><td>Use fewer cells, less detail, Beams, or <span class="ui">Build one cell and repeat it</span>.</td></tr>
+    <tr><td>A run takes very long</td><td>Look at the estimate before generating. Traced shapes grow with the cube of the block size; Beams are much faster. Press Cancel and reduce the block.</td></tr>
+    <tr><td>Thin beams warning</td><td>Raise the solid fraction or the cell size (chapter 10).</td></tr>
+    <tr><td>Several pieces, or floating pieces</td><td>Raise the density; keep <span class="ui">Remove small floating pieces</span> on. Organic with strong joint slimming at low density can break apart: set slimming to 0.</td></tr>
+    <tr><td>The slicer is slow or crashes</td><td>Reduce the triangle count: Beams with 6 sides or Hull joints, fewer cells, or a Lighter mesh option with a triangle size of one pixel.</td></tr>
+  </table>
+
+  <h2>Self-test</h2>
+  <p>If the app misbehaves on a particular computer, run its self-test. Open the
+  <code>LatticeGenerator</code> folder, type <code>cmd</code> in the address bar and
+  press <kbd>Enter</kbd>. In the window that opens, type:</p>
+  <p><code>latticegen.exe selftest</code></p>
+  <p>It builds one small example of every feature and prints <code>ok</code> or
+  <code>FAIL</code> for each, ending with <em>10/10 passed</em>. Send the output to
+  whoever supports the app.</p>
+
+  <h2>Command line</h2>
+  <p>The same folder contains <code>latticegen.exe</code>, which accepts every
+  option of the app as text, for scripts and batch jobs. For example:</p>
+  <p><code>latticegen.exe build octet --method struts --a 1 --rho 0.2 --cells 20 20 20 --sides 12 --check -o octet.stl</code></p>
+  <p>Type <code>latticegen.exe build --help</code> for the full list.</p>
+</section>
+
+<!-- ============================================================ 12 -->
+<section class="chapter" id="glossary">
+  <h1><span class="no">12</span>Glossary</h1>
+  <dl>
+    <dt>Cell (unit cell)</dt><dd>The small box that the lattice repeats. Its size is the cell size.</dd>
+    <dt>Block</dt><dd>The whole part: cells repeated along x, y and z.</dd>
+    <dt>Beam (strut)</dt><dd>One straight bar of a lattice.</dd>
+    <dt>Joint (node)</dt><dd>Where beams meet.</dd>
+    <dt>Connectivity</dt><dd>The number of beams meeting at a joint.</dd>
+    <dt>Solid fraction (relative density)</dt><dd>The share of the block volume that is solid resin.</dd>
+    <dt>Minimal surface (TPMS)</dt><dd>A smooth surface that repeats in three directions and divides space into two connected channels; the gyroid is the best known.</dd>
+    <dt>Mesh, triangle</dt><dd>An STL file describes the surface of the part as many small flat triangles. More triangles mean a smoother surface and a bigger file.</dd>
+    <dt>Watertight</dt><dd>A mesh with no holes, so it has a clear inside and outside. Slicers need this.</dd>
+    <dt>Seam</dt><dd>When one cell is built and repeated, the edges where copies meet.</dd>
+    <dt>Pixel, layer</dt><dd>The smallest step of a resin printer: the pixel across the build plate, the layer in height.</dd>
+    <dt>STL</dt><dd>The standard file format for 3D printing, read by every slicer.</dd>
+  </dl>
+</section>
+
+</body>
+</html>

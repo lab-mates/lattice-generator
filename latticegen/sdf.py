@@ -24,10 +24,23 @@ from .topologies import Skeleton
 
 
 def periodic_segment_images(segments, margin=0.9):
-    """Expand fractional segments over the 27 neighbouring cells and keep
-    those whose bounding box comes within ``margin`` (fractional) of the
-    unit cell.  ``margin`` must exceed the largest voxel-to-skeleton
-    distance (< sqrt(3)/2 for any connected cubic lattice)."""
+    """Periodic images of segments near the unit cell.
+
+    Expands the segments over the 27 neighbouring cells and keeps those
+    whose bounding box comes within ``margin`` of the cell.
+
+    Parameters
+    ----------
+    segments : iterable of (p, q)
+        Fractional endpoints.
+    margin : float, optional
+        Fractional distance; must exceed the largest voxel-to-skeleton
+        distance (below ``sqrt(3) / 2`` for any connected cubic lattice).
+
+    Returns
+    -------
+    list of (P, Q)
+    """
     out = []
     for p, q in segments:
         p, q = np.asarray(p, float), np.asarray(q, float)
@@ -88,19 +101,35 @@ def _min_dist_block(R, P, D, L2, smooth, max_elems=12_000_000):
 
 def distance_field(segments, N: int, A=None, smooth: float = 0.0,
                    block: int = 24, cull: bool = True) -> np.ndarray:
-    """Exact shortest distance from every voxel of the unit cell to the
-    strut skeleton, minimised over periodic images.
+    """Exact shortest distance from every voxel of the cell to a strut skeleton.
 
-    segments : fractional (p, q) endpoint pairs (a Skeleton's ``segments``).
-               A segment with p == q is a point (sphere).
-    A        : 3x3 lattice matrix (rows a_i), default identity.
-    smooth   : 0 -> hard min; k > 0 -> exponential smooth-min, fillet ~k
-               (same length unit as A).
-    block    : voxels per side of the cubic chunks processed at a time.
-    cull     : skip segment images that cannot influence a chunk of voxels
-               (exact to ~1e-6*smooth; large speed-up for big skeletons).
+    Minimised over periodic images. The grid is processed in cubic blocks,
+    and segment images that cannot be nearest for a block are skipped (the
+    distance is 1-Lipschitz, so a coarse exact pass bounds it).
 
-    Returns ``d`` with shape (N, N, N), in the length unit of A.
+    Parameters
+    ----------
+    segments : iterable of (p, q)
+        Fractional endpoint pairs, e.g. ``Skeleton.segments``. A segment
+        with ``p == q`` is a point (sphere).
+    N : int
+        Samples per cell edge.
+    A : array_like, shape (3, 3), optional
+        Lattice vectors as rows; identity by default.
+    smooth : float, optional
+        0 for the hard minimum. ``k > 0`` uses the exponential smooth
+        minimum ``-k log(sum exp(-d_i / k))``: fillets of size about ``k``
+        (same length unit as ``A``).
+    block : int, optional
+        Voxels per side of the blocks processed at a time.
+    cull : bool, optional
+        Skip segment images that cannot influence a block (exact to about
+        ``1e-6 smooth``; a large speed-up for big skeletons).
+
+    Returns
+    -------
+    ndarray, shape (N, N, N)
+        Distances, in the length unit of ``A``.
     """
     A = np.eye(3) if A is None else np.asarray(A, float)
     imgs = periodic_segment_images(segments)
@@ -141,12 +170,37 @@ def distance_field(segments, N: int, A=None, smooth: float = 0.0,
 
 
 def sdf_on_grid(cell, skeleton: Skeleton, N: int, smooth: float = 0.0, **kw) -> np.ndarray:
-    """``f = -distance`` for a skeleton in a cell (ready for meshing)."""
+    """Minus the distance to a skeleton, ready for meshing (solid is ``f >= -r``).
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+    skeleton : Skeleton
+    N : int
+    smooth : float, optional
+    **kw
+        Passed to :func:`distance_field`.
+
+    Returns
+    -------
+    ndarray, shape (N, N, N)
+    """
     cell = as_cell(cell)
     segs = list(skeleton.segments) + [(p, p) for p in skeleton.points]
     return -distance_field(segs, N, cell.A, smooth=smooth, **kw)
 
 
 def radius_for_density(d, rho) -> float:
-    """Strut radius r such that the solid fraction of {d <= r} equals rho."""
+    """Radius ``r`` whose solid ``{d <= r}`` has volume fraction ``rho``.
+
+    Parameters
+    ----------
+    d : ndarray
+        Distance samples from :func:`distance_field`.
+    rho : float
+
+    Returns
+    -------
+    float
+    """
     return float(np.quantile(d, rho))

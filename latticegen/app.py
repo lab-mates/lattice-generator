@@ -19,6 +19,26 @@ METHODS = ("auto", "sdf", "fourier", "tpms", "struts")
 
 @dataclass
 class BuildResult:
+    """Result of :func:`build`.
+
+    Attributes
+    ----------
+    mesh : LatticeMesh
+    field : UnitField or None
+        None for ``method='struts'``.
+    method : str
+        The method actually used (``'auto'`` resolved).
+    N : int
+        Field grid per cell; 0 for ``'struts'``.
+    filename : str
+        Suggested output name, e.g. ``octet_3x3x3.stl``.
+    report : str
+        :meth:`LatticeMesh.report` text.
+    dlp : str
+        :func:`format_report` text; empty unless ``check=True``.
+    timings : dict
+        Seconds after start: ``field``, ``mesh``, ``total``.
+    """
     mesh: object                    # LatticeMesh
     field: object = None            # UnitField (None for method 'struts')
     method: str = ""
@@ -30,8 +50,23 @@ class BuildResult:
 
 
 def default_grid(cell, pixel, instanced=False) -> int:
-    """Automatic N: half a pixel (N >= 80) for blocks, a quarter pixel for
-    instancing, where only the unit cell is meshed."""
+    """Automatic grid size used by the CLI and both GUIs.
+
+    Half a printer pixel per voxel with ``N >= 80`` for blocks. With
+    instancing only one cell is meshed and a fine cell remeshes better, so a
+    quarter pixel.
+
+    Parameters
+    ----------
+    cell : UnitCell
+    pixel : float
+        Printer pixel (mm).
+    instanced : bool, optional
+
+    Returns
+    -------
+    int
+    """
     from .printing import recommend_grid
     return recommend_grid(cell, pixel, oversample=4.0 if instanced else 2.0, minimum=80)
 
@@ -41,18 +76,79 @@ def build(topology, method="auto", a=1.0, cell=None, N=0, rho=0.3, graded=None,
           seam_spacing=0.0, edge_length=0.0, remesh="isotropic", sides=6, node="union",
           repair=False, islands=False, check=False, pixel=0.05, layer=0.05, verbose=False,
           log=print) -> BuildResult:
-    """Build a lattice block (options as in the CLI ``build`` command).
+    """Build a lattice block in one call, with the options of the CLI and GUIs.
 
-    cell      : (a, b, c, alpha, beta, gamma) for a general cell, else cubic ``a``.
-    N         : field grid per cell; 0 = automatic: voxel <= pixel/2 and N >= 80, or
-                voxel <= pixel/4 with ``instanced`` (only one cell is meshed, and a
-                fine unit cell remeshes better).
-    graded    : (rho_bottom, rho_top) linear gradient along z instead of ``rho``.
-    smooth    : SDF junction fillet as a fraction of the shortest cell edge.
-    node_comp : Fourier junction de-bulking; 0 or None = off.
-    islands   : drop floating slivers (``mesh.remove_islands()`` defaults) when
-                the block has more than one component.
-    edge_length, instanced, repair : need pymeshlab (not available in the browser).
+    ``python -m latticegen build``, the browser app and the desktop app all
+    call this function, so a block made in a GUI can be reproduced exactly
+    from Python.
+
+    Parameters
+    ----------
+    topology : str
+        Strut topology (``'octet'``, ...) or TPMS name (``'gyroid'``, ...).
+    method : {'auto', 'struts', 'sdf', 'fourier', 'tpms'}, optional
+        ``'struts'``: explicit beams (:func:`~latticegen.mesh_struts`).
+        ``'sdf'``: distance field, rounded beams. ``'fourier'``: organic
+        beams. ``'tpms'``: surfaces. ``'auto'`` picks ``'tpms'`` for surface
+        names and ``'sdf'`` otherwise.
+    a : float, optional
+        Cubic cell edge (mm).
+    cell : tuple of 6 float, optional
+        ``(a, b, c, alpha, beta, gamma)`` for a general cell; replaces ``a``.
+    N : int, optional
+        Field grid per cell; 0 uses :func:`default_grid`.
+    rho : float, optional
+        Uniform density.
+    graded : tuple of 2 float, optional
+        ``(rho_bottom, rho_top)``: linear gradient along z instead of ``rho``.
+    cells : tuple of 3 int, optional
+    smooth : float, optional
+        ``'sdf'`` fillet, as a fraction of the shortest cell edge.
+    node_comp : float, optional
+        ``'fourier'`` junction slimming; 0 or None is off.
+    sheet : bool, optional
+        ``'tpms'`` sheet instead of network solid.
+    instanced : bool, optional
+        Build one cell and repeat it (:func:`~latticegen.mesh_instanced`).
+    seam_spacing : float, optional
+        Instanced seam spacing (mm); 0 freezes the seams.
+    edge_length : float, optional
+        Target triangle edge (mm). Simplifies field meshes, or sets the
+        instanced interior remesh; 0 is off.
+    remesh : {'isotropic', 'decimate'}, optional
+        Instanced interior treatment.
+    sides : int, optional
+        ``'struts'`` polygon sides.
+    node : {'union', 'hull', 'round'}, optional
+        ``'struts'`` joint shape.
+    repair : bool, optional
+        Run :func:`~latticegen.repair` at the end.
+    islands : bool, optional
+        Remove floating pieces if the block has more than one component.
+    check : bool, optional
+        Run the DLP report.
+    pixel, layer : float, optional
+        Printer pixel and layer (mm), for ``N`` and the report.
+    verbose : bool, optional
+    log : callable, optional
+        Receives progress lines; ``print`` by default.
+
+    Returns
+    -------
+    BuildResult
+
+    Notes
+    -----
+    ``edge_length``, ``instanced`` and ``repair`` need ``pymeshlab``, which
+    the browser app does not have.
+
+    Examples
+    --------
+    >>> from latticegen.app import build
+    >>> res = build("octet", method="struts", a=1.0, rho=0.2, cells=(3, 3, 3),
+    ...             sides=12, log=lambda *_: None)
+    >>> res.filename
+    'octet_3x3x3.stl'
     """
     import latticegen as lg
     t_start = time.time()

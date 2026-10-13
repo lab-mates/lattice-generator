@@ -25,14 +25,37 @@ from .topologies import Skeleton
 # --------------------------------------------------------------------------- #
 
 def reciprocal_basis(A) -> np.ndarray:
-    """Rows b1,b2,b3 with b_i . a_j = 2*pi*delta_ij."""
+    """Reciprocal basis of a lattice.
+
+    Parameters
+    ----------
+    A : array_like, shape (3, 3)
+        Lattice vectors as rows.
+
+    Returns
+    -------
+    ndarray, shape (3, 3)
+        Rows b1, b2, b3 with ``b_i . a_j = 2 pi delta_ij``.
+    """
     return 2.0 * np.pi * np.linalg.inv(np.asarray(A, float)).T
 
 
 def enumerate_G(A, gmax):
-    """All reciprocal vectors with 0 < |G| <= gmax.
+    """All reciprocal-lattice vectors with ``0 < |G| <= gmax``.
 
-    Returns ``(hkl, G)``: integer indices (n,3) and cartesian vectors (n,3).
+    Parameters
+    ----------
+    A : array_like, shape (3, 3)
+        Lattice vectors as rows.
+    gmax : float
+        Cutoff, in inverse cartesian length units.
+
+    Returns
+    -------
+    hkl : ndarray of int, shape (n, 3)
+        Miller indices.
+    G : ndarray, shape (n, 3)
+        Cartesian wave vectors.
     """
     A = np.asarray(A, float)
     B = reciprocal_basis(A)
@@ -50,14 +73,25 @@ def enumerate_G(A, gmax):
 # --------------------------------------------------------------------------- #
 
 def motif_coefficients(hkl, G, points=(), segments=(), sigma=0.1):
-    """Coefficients of a Gaussian-smeared motif::
+    """Fourier coefficients of a Gaussian-smeared motif of points and struts.
 
-        c_G = [ sum_j w_j e^{-i G.r_j}
-              + sum_s w_s e^{-i G.r_mid} sinc(G.d / 2) ] exp(-sigma^2 |G|^2 / 2)
+    ``c_G = [sum_j w_j exp(-i G.r_j) + sum_s w_s exp(-i G.r_mid) sinc(G.d / 2)] exp(-sigma^2 |G|^2 / 2)``
 
-    points   : iterable of (x_frac, weight)
-    segments : iterable of (x1_frac, x2_frac, weight)   -- struts
-    sigma    : Gaussian smearing radius (cartesian length units)
+    Parameters
+    ----------
+    hkl : array_like, shape (n, 3)
+    G : array_like, shape (n, 3)
+        From :func:`enumerate_G`.
+    points : iterable of (x_frac, weight), optional
+        Point "atoms" (spherical nodes).
+    segments : iterable of (x1_frac, x2_frac, weight), optional
+        Struts, as uniform lines of atoms.
+    sigma : float, optional
+        Gaussian smearing radius (cartesian length units).
+
+    Returns
+    -------
+    ndarray of complex, shape (n,)
     """
     hkl = np.asarray(hkl, float)
     G = np.asarray(G, float)
@@ -75,8 +109,24 @@ def motif_coefficients(hkl, G, points=(), segments=(), sigma=0.1):
 
 
 def field_on_grid(hkl, c, N: int) -> np.ndarray:
-    """Evaluate the Fourier sum on an N^3 grid of fractional coordinates
-    u = n/N via an inverse FFT.  Requires N > 2*max|h| (no aliasing)."""
+    """Evaluate a Fourier sum on the N^3 fractional grid with one inverse FFT.
+
+    Parameters
+    ----------
+    hkl : array_like of int, shape (n, 3)
+    c : array_like of complex, shape (n,)
+    N : int
+        Samples per cell edge.
+
+    Returns
+    -------
+    ndarray, shape (N, N, N)
+
+    Raises
+    ------
+    ValueError
+        If ``N <= 2 max|h|``, which would alias high frequencies.
+    """
     hkl = np.asarray(hkl, int)
     hmax = int(np.abs(hkl).max()) if len(hkl) else 0
     if N <= 2 * hmax:
@@ -88,7 +138,18 @@ def field_on_grid(hkl, c, N: int) -> np.ndarray:
 
 
 def evaluate(hkl, c, x_frac) -> np.ndarray:
-    """Evaluate the Fourier sum at arbitrary fractional points (n,3)."""
+    """Evaluate a Fourier sum at arbitrary fractional points.
+
+    Parameters
+    ----------
+    hkl : array_like, shape (n, 3)
+    c : array_like of complex, shape (n,)
+    x_frac : array_like, shape (m, 3)
+
+    Returns
+    -------
+    ndarray, shape (m,)
+    """
     hkl = np.asarray(hkl, float)
     x = np.atleast_2d(np.asarray(x_frac, float))
     return np.real(np.exp(2j * np.pi * (x @ hkl.T)) @ c)
@@ -100,21 +161,39 @@ def evaluate(hkl, c, x_frac) -> np.ndarray:
 
 def compensate_nodes(hkl, G, c, nodes, ref_points, sigma, alpha=0.5,
                      sigma_node=None, n_iter=5):
-    """Reduce the field pile-up where struts meet.
+    """Reduce the field pile-up where struts meet ("junction slimming").
 
-    Summing strut fields makes ``f`` much larger at junctions than at
-    mid-strut, so the level set bulges there (octet: node/strut inscribed
-    radius ratio ~2.4 uncompensated vs ~1.44 for a sharp cylinder union).
-    Negative-weight Gaussian "anti-atoms" are added at the node positions,
-    calibrated by fixed-point iteration so that
-    ``f(node) -> alpha*f(mid-strut) + (1-alpha)*f(node)``.
+    Strut fields add up, so ``f`` is much larger at junctions than at
+    mid-strut and the level set bulges there (octet: node to strut inscribed
+    radius 2.4 uncompensated, 1.44 for a sharp cylinder union).
+    Negative-weight Gaussians are added at the nodes, with weights found by
+    fixed-point iteration so that
+    ``f(node) -> alpha f(mid-strut) + (1 - alpha) f(node)``.
 
-    sigma_node : width of the anti-atoms; default 1.7*sigma.  Must be wider
-                 than the strut sigma to carve the whole bulge.
-    alpha      : strength.  0.5 reaches the sharp-union ratio while keeping
-                 a fillet; ~0.6 gives a slightly waisted junction; beyond
-                 that the junction may pinch off.
-    Returns ``(c_new, node_weights)``.
+    Parameters
+    ----------
+    hkl, G : array_like, shape (n, 3)
+    c : array_like of complex, shape (n,)
+        Coefficients to correct.
+    nodes : array_like, shape (k, 3)
+        Fractional node positions.
+    ref_points : array_like, shape (m, 3)
+        Fractional mid-strut positions.
+    sigma : float
+        Strut smearing radius.
+    alpha : float, optional
+        Strength. 0.5 reaches the sharp-union ratio while keeping a fillet;
+        about 0.6 waists the junction; beyond that it may pinch off.
+    sigma_node : float, optional
+        Width of the compensating Gaussians; default ``1.7 sigma``. It must be
+        wider than ``sigma`` to carve the whole bulge.
+    n_iter : int, optional
+        Fixed-point iterations.
+
+    Returns
+    -------
+    c_new : ndarray of complex
+    node_weights : ndarray
     """
     hkl = np.asarray(hkl, float)
     nodes = np.atleast_2d(np.asarray(nodes, float))
@@ -145,13 +224,29 @@ def fourier_coefficients(cell, skeleton: Skeleton, sigma=None, gmax=None,
                          node_comp=None, node_sigma=None, weights=None):
     """Fourier coefficients of a strut skeleton in a cell.
 
-    sigma     : Gaussian smearing radius (cell length units).  Default: the
-                topology's tuned fraction of the shortest cell vector.
-    gmax      : reciprocal-space cutoff in units of 2*pi/a_min.  Default:
-                topology-tuned (4.5 .. 7).
-    node_comp : alpha of :func:`compensate_nodes` (None = off).
-    weights   : optional per-strut weights (default 1).
-    Returns ``(hkl, G, c, params)``.
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+    skeleton : Skeleton
+    sigma : float, optional
+        Gaussian smearing radius (cell length units). Default: the
+        topology's tuned fraction of the shortest cell edge.
+    gmax : float, optional
+        Cutoff in units of ``2 pi / a_min``. Default: topology-tuned (4.5 to 7).
+    node_comp : float, optional
+        ``alpha`` of :func:`compensate_nodes`; None is off.
+    node_sigma : float, optional
+        ``sigma_node`` of :func:`compensate_nodes`.
+    weights : array_like, optional
+        Per-strut weights (default 1).
+
+    Returns
+    -------
+    hkl : ndarray of int, shape (n, 3)
+    G : ndarray, shape (n, 3)
+    c : ndarray of complex, shape (n,)
+    params : dict
+        The parameters actually used.
     """
     cell = as_cell(cell)
     a = cell.a_min
@@ -175,5 +270,15 @@ def fourier_coefficients(cell, skeleton: Skeleton, sigma=None, gmax=None,
 
 
 def min_grid_for(hkl) -> int:
-    """Smallest N that resolves the given reciprocal vectors without aliasing."""
+    """Smallest grid size that resolves the given Miller indices without aliasing.
+
+    Parameters
+    ----------
+    hkl : array_like of int, shape (n, 3)
+
+    Returns
+    -------
+    int
+        ``2 max|h| + 1``.
+    """
     return 2 * int(np.abs(np.asarray(hkl)).max()) + 1

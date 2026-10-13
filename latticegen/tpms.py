@@ -75,11 +75,37 @@ SURFACES = {
 
 
 def available() -> list:
+    """Names of the built-in triply periodic minimal surfaces.
+
+    Returns
+    -------
+    list of str
+        ``['gyroid', 'primitive', 'diamond', 'iwp', 'neovius', 'lidinoid',
+        'fischer_koch_s', 'split_p']``. Aliases such as ``schwarz_p`` are also
+        accepted by :func:`tpms_function`.
+    """
     return ["gyroid", "primitive", "diamond", "iwp", "neovius", "lidinoid",
             "fischer_koch_s", "split_p"]
 
 
 def tpms_function(name):
+    """Level-set function ``F(X, Y, Z)`` of a surface, with ``X = 2 pi x / a``.
+
+    Parameters
+    ----------
+    name : str
+        Surface name or alias, case-insensitive.
+
+    Returns
+    -------
+    callable
+        Vectorised ``F(X, Y, Z)``; the surface is ``F = 0``.
+
+    Raises
+    ------
+    KeyError
+        If the name is unknown.
+    """
     key = name.lower().replace("-", "_").replace(" ", "_")
     if key not in SURFACES:
         raise KeyError(f"unknown TPMS {name!r}; available: {', '.join(available())}")
@@ -88,10 +114,26 @@ def tpms_function(name):
 
 def tpms_on_grid(name: str, N: int, periods=(1, 1, 1), sheet: bool = False,
                  phase=(0.0, 0.0, 0.0)) -> np.ndarray:
-    """Sample a TPMS level-set function on the N^3 fractional grid of one
-    cell.  ``periods`` repeats the surface n times along each cell vector.
-    ``sheet=True`` returns ``-|F|`` (sheet solid).  ``phase`` shifts the
-    surface by a fraction of the period along each axis."""
+    """Sample a TPMS level-set function on the N^3 fractional grid of one cell.
+
+    Parameters
+    ----------
+    name : str
+        Surface name (see :func:`available`).
+    N : int
+        Samples per cell edge.
+    periods : tuple of 3 int, optional
+        Repeats of the surface along each cell vector.
+    sheet : bool, optional
+        Return ``-|F|`` (sheet solid around the surface) instead of ``F``
+        (network solid).
+    phase : tuple of 3 float, optional
+        Shift of the surface, in fractions of the period.
+
+    Returns
+    -------
+    ndarray, shape (N, N, N)
+    """
     fn = tpms_function(name)
     u = np.arange(N) / N
     X, Y, Z = np.meshgrid(*[_pi2 * (u * p + ph) for p, ph in zip(periods, phase)], indexing="ij")

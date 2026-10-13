@@ -90,6 +90,13 @@ python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 20 20 2
   explicit strut meshes, simplification, DLP considerations.
 * [`docs/usage.md`](docs/usage.md) – installation, walkthrough, every public
   function and option, CLI reference, recipes, troubleshooting.
+* [`docs/api/`](docs/api/) – API reference built from the docstrings with
+  Sphinx: `pip install sphinx furo`, then
+  `python -m sphinx -b html docs/api docs/api/_build/html`.
+* [`docs/manual/LatticeGenerator-User-Manual.pdf`](docs/manual/LatticeGenerator-User-Manual.pdf)
+  – user manual of the Windows desktop app, with screenshots.
+* [`docs/paper/`](docs/paper/) – draft manuscript (LaTeX) with the benchmark
+  scripts behind its numbers.
 * [`examples/`](examples/) – runnable scripts.
 * [`legacy/`](legacy/) – the original three scripts this package grew from.
 

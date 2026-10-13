@@ -62,7 +62,18 @@ _KEY_DIGITS = 6         # rounding for node identity / signatures
 # --------------------------------------------------------------------------- #
 
 def polygon_area(r, sides) -> float:
-    """Area of a regular polygon of circumradius r."""
+    """Area of a regular polygon of circumradius ``r``.
+
+    Parameters
+    ----------
+    r : float
+    sides : int
+
+    Returns
+    -------
+    float
+        ``(sides / 2) r^2 sin(2 pi / sides)``.
+    """
     return 0.5 * sides * r * r * np.sin(2.0 * np.pi / sides)
 
 
@@ -94,8 +105,18 @@ _HULL_UNION = None      # optional backend, e.g. Manifold's WebAssembly build un
 
 
 def set_hull_union_backend(fn):
-    """Use ``fn(point_sets) -> (verts, tris, volume)`` (union of the convex
-    hulls of each (k, 3) point set, outward-oriented) instead of manifold3d."""
+    """Replace the boolean union used by ``node='union'``.
+
+    The default uses ``manifold3d``. The browser app registers Manifold's
+    WebAssembly build through this hook.
+
+    Parameters
+    ----------
+    fn : callable or None
+        ``fn(point_sets) -> (verts, faces)``: the union of the convex hulls
+        of each (k, 3) point array, as a closed mesh with outward normals.
+        ``None`` restores the default.
+    """
     global _HULL_UNION
     _HULL_UNION = fn
 
@@ -426,10 +447,30 @@ class _Geometry:
 # --------------------------------------------------------------------------- #
 
 def bulk_volume_coefficients(cell, topology, sides=6, node="union", round_points=64):
-    """(alpha, beta, r_max) with unit-cell solid volume V(r) = alpha r^2 - beta r^3
-    for the periodic lattice (every node counted once per cell).  The formula
-    (and the mesh) is valid up to ``r_max``, where primitives that do not
-    share a node start to touch, or struts vanish into their nodes."""
+    """Closed-form unit-cell solid volume of a strut lattice.
+
+    Prisms, pull-backs and node volumes all scale with the strut radius, so
+    the solid volume of one period is ``V(r) = alpha r^2 - beta r^3``.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+    topology : str or Skeleton
+    sides : int, optional
+        Polygon of the strut section.
+    node : {'union', 'hull', 'round'}, optional
+        Joint type, as in :func:`mesh_struts`.
+    round_points : int, optional
+        Sphere samples for ``node='round'``.
+
+    Returns
+    -------
+    alpha, beta : float
+    r_max : float
+        Largest radius for which the formula and the mesh are valid: beyond
+        it, struts or nodes that share no node would overlap, or struts
+        would vanish into their nodes.
+    """
     cell = as_cell(cell)
     sk = _skel(topology)
     P, Q, own = _periodic_struts(sk)
@@ -450,7 +491,32 @@ def bulk_volume_coefficients(cell, topology, sides=6, node="union", round_points
 
 
 def radius_for_density(cell, topology, rho, sides=6, node="union", round_points=64) -> float:
-    """Strut circumradius giving bulk relative density ``rho`` (cell units)."""
+    """Strut circumradius that gives bulk relative density ``rho``.
+
+    Solves ``V(r) / V_cell = rho`` with the closed form of
+    :func:`bulk_volume_coefficients`; no meshing is involved.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+    topology : str or Skeleton
+    rho : float
+        Bulk relative density of the periodic lattice.
+    sides : int, optional
+    node : {'union', 'hull', 'round'}, optional
+    round_points : int, optional
+
+    Returns
+    -------
+    float
+        Radius in cell units (mm).
+
+    Raises
+    ------
+    ValueError
+        If ``rho`` is above what the topology reaches without overlaps
+        (octet with union joints: 0.83).
+    """
     cell = as_cell(cell)
     alpha, beta, r_max = bulk_volume_coefficients(cell, topology, sides, node, round_points)
     V = cell.volume
@@ -464,29 +530,81 @@ def radius_for_density(cell, topology, rho, sides=6, node="union", round_points=
 
 def mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6,
                 node="union", round_points=64, verbose=False) -> LatticeMesh:
-    """Explicit prism-and-node mesh of an (nx, ny, nz) block of a strut topology.
+    """Explicit beam mesh: one n-gon prism per strut, joined at the nodes.
 
-    cell     : UnitCell, 3x3 matrix or cubic edge length (mm).
-    topology : built-in name ('octet', 'bcc', ...) or a Skeleton.
-    rho      : bulk relative density of the periodic lattice; converted to
-               ``radius`` analytically.  Give ``radius`` (mm, polygon
-               circumradius) instead to set the strut size directly.
-    cells    : block size in cells.  Every strut whose two nodes lie in the
-               closed block is kept whole, so the outer faces carry complete
-               nodes and the block is ~2 r larger than nx*a (its actual
-               relative density, ``mesh.relative_density``, is a little
-               above ``rho`` because of the extra boundary struts).
-    sides    : polygon of the strut section (3..64).  Minimum thickness is
-               2 r cos(pi/sides); with 1-2 pixel struts 4-6 sides suffice.
-    node     : 'union' (default: joints the size of the struts -- the union
-               of the struts and a sphere of the strut radius; needs
-               manifold3d), 'hull' (convex hull of the strut rings: a bulge
-               of ~1.4-2 r, no extra dependency) or 'round' (hull of the
-               rings plus a sampled sphere: rounded convex bulge).
-    round_points : sphere samples for node='round'.
+    No field, no marching cubes and no pymeshlab: a strut costs ``2 sides``
+    triangles whatever its length, so this is the leanest mesh of a strut
+    lattice and the only practical route for thousands of cells (a
+    20 x 20 x 20 octet block takes a few seconds).
 
-    Returns a watertight :class:`LatticeMesh` (outward normals);
-    ``mesh.info`` holds strut_radius, node_radius, min_thickness, sides.
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+        The cell; a float is a cubic edge in mm.
+    topology : str or Skeleton
+        Built-in name (``'octet'``, ``'bcc'``, ...) or a skeleton.
+    rho : float, optional
+        Bulk relative density of the periodic lattice, converted to the
+        radius in closed form (:func:`radius_for_density`).
+    radius : float, optional
+        Strut circumradius (mm). Give exactly one of ``rho`` and ``radius``.
+    cells : tuple of 3 int, optional
+        Block size in cells. Every strut whose two nodes lie in the closed
+        block is kept whole, so the outer faces carry complete nodes, the
+        part is about ``2 r`` larger than ``n a``, and its relative density is
+        slightly above ``rho`` (3 % on a 20-cell block).
+    sides : int, optional
+        Polygon of the strut section, 3 to 64. The thinnest dimension is
+        ``2 r cos(pi / sides)``.
+    node : {'union', 'hull', 'round'}, optional
+        Joint shape.
+
+        ``'union'`` (default)
+            Joints the size of the beams: every prism continues to the node
+            centre and is closed behind it by a dome of the strut radius; the
+            node is the boolean union of these pieces (``manifold3d``).
+            Nothing extends beyond one strut radius from the skeleton.
+        ``'hull'``
+            Convex hull of the strut end rings: about half the triangles of
+            ``'union'``, but the joint bulges to 1.4 to 2 strut radii. No
+            extra dependency.
+        ``'round'``
+            Hull of the rings plus a sampled sphere: a rounded convex bulge.
+    round_points : int, optional
+        Sphere samples for ``node='round'``.
+    verbose : bool, optional
+
+    Returns
+    -------
+    LatticeMesh
+        Watertight by construction (vertices shared by index), outward
+        normals. ``info`` holds ``strut_radius``, ``node_radius``,
+        ``min_thickness``, ``sides`` and ``box_volume``.
+
+    Raises
+    ------
+    ValueError
+        If ``rho`` or ``radius`` is too large for the topology, or arguments
+        are out of range.
+
+    Warns
+    -----
+    RuntimeWarning
+        If the skeleton has isolated points; they are ignored.
+
+    Notes
+    -----
+    Concave fillets between struts cannot be made from convex pieces; use
+    ``sdf_field(..., smooth=k)`` with :func:`mesh_instanced` when they
+    matter.
+
+    Examples
+    --------
+    >>> import latticegen as lg
+    >>> cube = lg.mesh_struts(lg.UnitCell.cubic(1.0), "octet", rho=0.2,
+    ...                       cells=(3, 3, 3), sides=12)
+    >>> cube.is_watertight
+    True
     """
     cell = as_cell(cell)
     sk = _skel(topology)

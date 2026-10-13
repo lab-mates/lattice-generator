@@ -11,7 +11,7 @@ Pipeline:  UnitCell  ->  Skeleton / TPMS  ->  UnitField  ->  LatticeMesh  ->  ST
     mesh  = mesh.simplify(edge_length=0.05)
     mesh.export("octet_5x5x5.stl")
 
-    lean  = lg.mesh_struts(cell, "octet", rho=0.30, cells=(20, 20, 20))   # prisms + hull nodes
+    lean  = lg.mesh_struts(cell, "octet", rho=0.30, cells=(20, 20, 20))   # explicit beams
     print(lg.format_report(lg.dlp_report(mesh, field, 0.30, pixel_mm=0.05)))
 """
 

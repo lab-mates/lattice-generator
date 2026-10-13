@@ -17,8 +17,9 @@ latticegen.exe       ── console: `latticegen selftest`, or the full latticeg
 ```
 
 Colleagues unzip `LatticeGenerator-win64-<version>.zip` anywhere and run
-`LatticeGenerator\LatticeGenerator.exe`. There's nothing to install: WebView2 and .NET
-ship with Windows 10/11. The exe is unsigned, so the first start shows
+`LatticeGenerator\LatticeGenerator.exe`. The user manual,
+`LatticeGenerator-User-Manual.pdf` (from `docs/manual/`), is in the same folder.
+There's nothing to install: WebView2 and .NET ship with Windows 10/11. The exe is unsigned, so the first start shows
 "Windows protected your PC": click **More info → Run anyway**.
 If anything misbehaves on a PC, run `latticegen.exe selftest` in that folder from
 a command prompt.
@@ -75,7 +76,7 @@ desktop/build/build.sh     # ~3 min -> desktop/dist/LatticeGenerator-win64-<vers
 | Part | Wheel | Bundled |
 |---|---|---|
 | pymeshlab | 182 MB | 25 MB |
-| whole app | | 179 MB unzipped, 80 MB zip |
+| whole app | | 182 MB unzipped, 82 MB zip (incl. the 2.8 MB manual) |
 
 manifold3d (beam-sized joints) adds 2 MB.
 

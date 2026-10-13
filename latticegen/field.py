@@ -17,7 +17,37 @@ from .topologies import Skeleton, skeleton as _lookup_skeleton
 
 
 class UnitField:
-    """Periodic scalar field of one unit cell (solid = f >= threshold)."""
+    """Periodic scalar field of one unit cell; the solid is ``f >= threshold``.
+
+    The field is sampled at fractional coordinates ``u = n / N`` of one cell.
+    The threshold for a target volume fraction is the ``1 - rho`` quantile
+    of the samples, so the same object serves any density, uniform or graded.
+    Build one with :func:`sdf_field`, :func:`fourier_field`,
+    :func:`tpms_field` or :func:`custom_field`.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+        The cell (see :func:`~latticegen.cells.as_cell`).
+    f : array_like, shape (N, N, N)
+        Field samples; stored as float32.
+    name : str, optional
+    method : str, optional
+        ``'sdf'``, ``'fourier'``, ``'tpms'`` or ``'custom'``.
+    skeleton : Skeleton, optional
+        Skeleton the field was built from (enables strut and node sizes in
+        :meth:`feature_sizes`).
+    meta : dict, optional
+        Builder parameters, kept for reference.
+
+    Attributes
+    ----------
+    cell : UnitCell
+    f : ndarray, float32, shape (N, N, N)
+    name, method : str
+    skeleton : Skeleton or None
+    meta : dict
+    """
 
     def __init__(self, cell, f, name="field", method="custom", skeleton=None, meta=None):
         self.cell: UnitCell = as_cell(cell)
@@ -35,28 +65,51 @@ class UnitField:
     # ------------------------------------------------------------------ #
     @property
     def N(self) -> int:
+        """Samples per cell edge.
+        """
         return self.f.shape[0]
 
     @property
     def A(self) -> np.ndarray:
+        """Lattice vectors of the cell (rows).
+        """
         return self.cell.A
 
     @property
     def voxel_size(self) -> np.ndarray:
-        """Grid spacing along each cell vector (cell units)."""
+        """Grid spacing along each cell vector.
+
+        Returns
+        -------
+        ndarray, shape (3,)
+            Cell lengths divided by ``N`` (cell units, e.g. mm).
+        """
         return self.cell.lengths / self.N
 
     @property
     def sorted_values(self) -> np.ndarray:
-        """Sorted field samples (float64), cached; the quantile function."""
+        """Sorted field samples (float64, cached): the quantile function.
+        """
         if self._sorted is None:
             self._sorted = np.sort(self.f.astype(np.float64), axis=None)
         return self._sorted
 
     # -- density <-> threshold --------------------------------------------- #
     def threshold(self, rho):
-        """Isovalue t such that the volume fraction of {f >= t} is rho.
-        Accepts scalars or arrays (vectorised via the quantile function)."""
+        """Isovalue whose solid ``{f >= t}`` has volume fraction ``rho``.
+
+        Uses the quantile of the voxel samples. Fast and vectorised, but
+        quantised on highly symmetric fields; see :meth:`calibrated_threshold`.
+
+        Parameters
+        ----------
+        rho : float or array_like
+            Target volume fraction(s), strictly inside (0, 1).
+
+        Returns
+        -------
+        float or ndarray
+        """
         rho = np.asarray(rho, float)
         if np.any(rho <= 0.0) or np.any(rho >= 1.0):
             raise ValueError("rho must lie strictly inside (0, 1)")
@@ -65,13 +118,26 @@ class UnitField:
         return np.interp(1.0 - rho, p, S)
 
     def calibrated_threshold(self, rho, tol=2e-4, max_iter=6) -> float:
-        """Isovalue giving volume fraction ``rho`` of the actual marching-cubes
-        unit-cell mesh (secant iteration on the closed single-cell volume).
+        """Isovalue that gives volume fraction ``rho`` on the marching-cubes mesh.
 
-        The plain quantile mapping can be quantised on highly symmetric
-        fields (many voxels share the same value), which makes nearby
-        densities collapse onto one isovalue; this removes that error at the
-        cost of a few single-cell meshings.  Results are cached per rho.
+        Symmetric fields have many voxels with equal values, so the plain
+        quantile can map nearby densities to one isovalue (errors up to ~1 %
+        absolute at N = 48). This meshes one closed unit cell, measures its
+        volume, and iterates the isovalue with a secant method. Results are
+        cached per ``rho``.
+
+        Parameters
+        ----------
+        rho : float
+            Target volume fraction.
+        tol : float, optional
+            Accepted absolute density error.
+        max_iter : int, optional
+            Maximum secant steps.
+
+        Returns
+        -------
+        float
         """
         from .meshing import mesh_stack
         rho = float(rho)
@@ -106,35 +172,96 @@ class UnitField:
         return best
 
     def density(self, t) -> float:
-        """Volume fraction of the solid {f >= t} estimated by voxel count
-        (voxels exactly on the isovalue count one half)."""
+        """Volume fraction of ``{f >= t}`` by voxel count.
+
+        Voxels exactly on the isovalue count one half.
+
+        Parameters
+        ----------
+        t : float
+            Isovalue.
+
+        Returns
+        -------
+        float
+        """
         return float((self.f > t).mean() + 0.5 * (self.f == t).mean())
 
     def density_curve(self, ts) -> np.ndarray:
+        """:meth:`density` for several isovalues.
+
+        Parameters
+        ----------
+        ts : array_like
+
+        Returns
+        -------
+        ndarray
+        """
         return np.array([self.density(t) for t in np.atleast_1d(ts)])
 
     def solid_mask(self, rho) -> np.ndarray:
+        """Boolean voxel mask of the solid at density ``rho``.
+
+        Parameters
+        ----------
+        rho : float
+
+        Returns
+        -------
+        ndarray of bool, shape (N, N, N)
+        """
         return self.f >= self.threshold(rho)
 
     # -- feature sizes ------------------------------------------------------ #
     def strut_radius(self, rho) -> float:
-        """Strut radius (cell length units).  Exact for SDF fields (r = -t);
-        for other fields the inscribed radius at strut midpoints measured
-        with a periodic distance transform."""
+        """Strut radius at density ``rho`` (cell units).
+
+        Exact for distance fields (``r = -t``); for other fields, the inscribed
+        radius at the strut midpoints from a periodic distance transform.
+
+        Parameters
+        ----------
+        rho : float
+
+        Returns
+        -------
+        float
+        """
         if self.method == "sdf":
             return float(-self.threshold(rho))
         return self.feature_sizes(rho)["strut_radius"]
 
     def feature_sizes(self, rho, sample_ratio=None) -> dict:
-        """Estimate characteristic sizes of the solid and the void at density
-        ``rho`` with periodic Euclidean distance transforms (cell units):
+        """Characteristic sizes of the solid and the void at density ``rho``.
 
-        strut_radius  inscribed radius at strut midpoints (skeleton fields)
-        node_radius   inscribed radius at the nodes (skeleton fields)
-        min_thickness 2 x smallest ridge value of the solid EDT (any field)
-        max_thickness 2 x largest inscribed sphere of the solid
-        pore_radius   largest inscribed sphere of the void (drainage)
-        pore_throat   2 x smallest ridge value of the void EDT
+        Computed with periodic Euclidean distance transforms of the voxel mask,
+        in cell units.
+
+        Parameters
+        ----------
+        rho : float
+        sample_ratio : optional
+            Unused; kept for compatibility.
+
+        Returns
+        -------
+        dict
+            ``min_thickness``
+                Twice a low percentile of the solid's medial ridge: the thinnest
+                place of any solid feature.
+            ``max_thickness``
+                Diameter of the largest sphere inside the solid.
+            ``pore_radius``
+                Radius of the largest sphere inside the void.
+            ``pore_throat``
+                Twice a low percentile of the void's medial ridge: the narrowest
+                passage for resin drainage.
+            ``strut_radius``, ``strut_radius_min``, ``node_radius``, ``node_to_strut_ratio``
+                Only for fields built from a skeleton: inscribed radii at the
+                strut midpoints and nodes.
+
+            Plus the keys of :meth:`connectivity_check`.
         """
         from scipy import ndimage
 
@@ -180,21 +307,45 @@ class UnitField:
         return out
 
     def phase_components(self, rho, mask=None) -> tuple:
-        """Periodically connected components of (solid, void) at density
-        ``rho``.  A printable lattice needs exactly one solid component; a
-        sheet TPMS legitimately has two void labyrinths."""
+        """Periodically connected components of the solid and the void.
+
+        Parameters
+        ----------
+        rho : float
+        mask : ndarray of bool, optional
+            Precomputed :meth:`solid_mask`.
+
+        Returns
+        -------
+        tuple of int
+            ``(solid_components, void_components)``. A printable lattice has one
+            solid component; a sheet TPMS legitimately has two void labyrinths.
+        """
         c = self.connectivity_check(rho, mask)
         return c["solid_components"], c["void_components"]
 
     def connectivity_check(self, rho, mask=None) -> dict:
-        """Connectivity of the two phases at density ``rho``:
+        """Connectivity of the two phases at density ``rho``.
 
-        solid_components / void_components : periodically connected pieces
-        floating_solids : solid pieces that do not percolate (would float)
-        enclosed_voids  : void pockets that do not percolate (trap resin)
+        Components are labelled and merged across the periodic faces
+        (union-find). A piece that never reaches the boundary of a 2x2x2 tiling
+        is a closed pocket or a floating island.
 
-        Percolation is judged on a 2x2x2 tiling: a piece that never reaches
-        the tiling boundary is a closed pocket / island.
+        Parameters
+        ----------
+        rho : float
+        mask : ndarray of bool, optional
+            Precomputed :meth:`solid_mask`.
+
+        Returns
+        -------
+        dict
+            ``solid_components``, ``void_components``
+                Periodically connected pieces of each phase.
+            ``floating_solids``
+                Solid pieces that do not percolate; they would float in the vat.
+            ``enclosed_voids``
+                Void pockets that do not percolate; they trap uncured resin.
         """
         from scipy import ndimage
         mask = self.solid_mask(rho) if mask is None else mask
@@ -240,21 +391,62 @@ class UnitField:
 
     # -- meshing shortcuts ---------------------------------------------------- #
     def mesh(self, rho=0.3, cells=(1, 1, 1), **kw):
-        """Mesh an (nx, ny, nz) block of this field (see :func:`mesh_stack`)."""
+        """Mesh a block of this field; shortcut for :func:`~latticegen.mesh_stack`.
+
+        Parameters
+        ----------
+        rho : float, array_like or callable
+        cells : tuple of 3 int
+        **kw
+            Passed to :func:`~latticegen.mesh_stack`.
+
+        Returns
+        -------
+        LatticeMesh
+        """
         from .meshing import mesh_stack
         return mesh_stack(self, rho=rho, cells=cells, **kw)
 
     def mesh_instanced(self, rho=0.3, cells=(1, 1, 1), **kw):
-        """Lean homogeneous block via unit-cell instancing (see :func:`mesh_instanced`)."""
+        """Lean homogeneous block; shortcut for :func:`~latticegen.mesh_instanced`.
+
+        Parameters
+        ----------
+        rho : float
+        cells : tuple of 3 int
+        **kw
+            Passed to :func:`~latticegen.mesh_instanced`.
+
+        Returns
+        -------
+        LatticeMesh
+        """
         from .instanced import mesh_instanced
         return mesh_instanced(self, rho=rho, cells=cells, **kw)
 
     # -- persistence ------------------------------------------------------------ #
     def save(self, path):
+        """Save the field and cell to a compressed ``.npz`` file.
+
+        Parameters
+        ----------
+        path : str or path-like
+        """
         np.savez_compressed(path, f=self.f, A=self.A, name=self.name, method=self.method)
 
     @classmethod
     def load(cls, path) -> "UnitField":
+        """Load a field written by :meth:`save`.
+
+        Parameters
+        ----------
+        path : str or path-like
+
+        Returns
+        -------
+        UnitField
+            Without the skeleton and builder metadata.
+        """
         z = np.load(path, allow_pickle=False)
         return cls(z["A"], z["f"], name=str(z["name"]), method=str(z["method"]))
 
@@ -272,14 +464,44 @@ def _skel(topology) -> Skeleton:
 
 def fourier_field(cell, topology, N=96, sigma=None, gmax=None, node_comp=None,
                   node_sigma=None, weights=None) -> UnitField:
-    """Fourier-synthesis field of a strut topology.
+    """Fourier-synthesis field of a strut topology: soft, organic struts.
 
-    cell      : UnitCell, 3x3 matrix or cubic edge length.
-    topology  : Skeleton or built-in name ('octet', 'bcc', ...).
-    N         : grid samples per cell edge (must exceed 2*max|hkl|).
-    sigma     : Gaussian smearing radius (cell units); default topology-tuned.
-    gmax      : reciprocal cutoff in units of 2*pi/a_min; default tuned.
-    node_comp : junction de-bulking strength (e.g. 0.5); None = off.
+    Every strut contributes its structure factor
+    ``exp(-i G.r_mid) sinc(G.d / 2)``, damped by a Gaussian form factor
+    ``exp(-sigma^2 |G|^2 / 2)``; the band-limited sum is evaluated on the grid
+    with one inverse FFT.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+        The cell (a float is a cubic edge in mm).
+    topology : str or Skeleton
+        Built-in name (``'octet'``, ``'bcc'``, ...) or a skeleton.
+    N : int, optional
+        Samples per cell edge. Must exceed twice the largest Miller index;
+        a ``ValueError`` says so otherwise.
+    sigma : float, optional
+        Gaussian smearing radius (cell length units, e.g. mm). Default: a
+        topology-tuned fraction of the shortest cell edge (octet 0.06).
+    gmax : float, optional
+        Reciprocal cutoff in units of ``2 pi / a_min``. Default: tuned per
+        topology (e.g. octet 6.5).
+    node_comp : float, optional
+        Junction slimming. Struts' fields add up at the nodes, so the solid
+        bulges there; a value in (0, 1] subtracts a wider Gaussian at every
+        node so that the node field becomes
+        ``node_comp * f(mid-strut) + (1 - node_comp) * f(node)``. ``None``
+        (default) is off; 0.5 makes an octet junction about as thick as a
+        sharp cylinder union.
+    node_sigma : float, optional
+        Width of the compensating Gaussian; default ``1.7 * sigma``.
+    weights : array_like, optional
+        Per-strut weights of the motif.
+
+    Returns
+    -------
+    UnitField
+        ``method='fourier'``; ``meta`` holds the coefficients.
     """
     from . import fourier
     cell = as_cell(cell)
@@ -293,10 +515,32 @@ def fourier_field(cell, topology, N=96, sigma=None, gmax=None, node_comp=None,
 
 
 def sdf_field(cell, topology, N=96, smooth=0.0, **kw) -> UnitField:
-    """Distance-field (SDF) of a strut topology; ``f = -distance``.
+    """Distance field of a strut topology: exact cylinders, optional fillets.
 
-    smooth : 0 for sharp cylinder unions, k > 0 for junction fillets of size
-             ~k (cell units).  Extra keywords go to :func:`sdf.distance_field`.
+    The field is minus the distance to the nearest strut (over all periodic
+    images), so the solid at isovalue ``t`` is every point within ``-t`` of
+    the skeleton.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+        The cell (a float is a cubic edge in mm).
+    topology : str or Skeleton
+        Built-in name or a skeleton.
+    N : int, optional
+        Samples per cell edge.
+    smooth : float, optional
+        0 for sharp cylinder unions. ``k > 0`` blends the strut distances with
+        a log-sum-exp smooth minimum, which rounds every junction with a
+        fillet of about ``k`` (cell units, e.g. mm). Keep it near 10 to 30 %
+        of the strut radius if uniform sections matter.
+    **kw
+        Passed to :func:`latticegen.sdf.distance_field`.
+
+    Returns
+    -------
+    UnitField
+        ``method='sdf'``; :meth:`UnitField.strut_radius` is exact.
     """
     from . import sdf
     cell = as_cell(cell)
@@ -307,9 +551,31 @@ def sdf_field(cell, topology, N=96, smooth=0.0, **kw) -> UnitField:
 
 
 def tpms_field(cell, name="gyroid", N=64, sheet=False, periods=(1, 1, 1), phase=(0, 0, 0)) -> UnitField:
-    """TPMS level-set field ('gyroid', 'primitive', 'diamond', 'iwp',
-    'neovius', 'lidinoid', 'fischer_koch_s', 'split_p').  ``sheet=True`` for
-    a wall-type solid around the surface (both labyrinths open)."""
+    """Field of a triply periodic minimal surface.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+        The cell; the surface is stretched to fit a non-cubic cell.
+    name : str, optional
+        ``'gyroid'``, ``'primitive'``, ``'diamond'``, ``'iwp'``,
+        ``'neovius'``, ``'lidinoid'``, ``'fischer_koch_s'`` or ``'split_p'``.
+    N : int, optional
+        Samples per cell edge.
+    sheet : bool, optional
+        False (default): network solid, one labyrinth filled. True: a wall
+        of finite thickness around the surface; both labyrinths stay open,
+        which drains resin well.
+    periods : tuple of 3 int, optional
+        Repeats of the surface per cell along each cell vector.
+    phase : tuple of 3 float, optional
+        Shift of the surface, in fractions of the period.
+
+    Returns
+    -------
+    UnitField
+        ``method='tpms'``.
+    """
     from . import tpms
     cell = as_cell(cell)
     f = tpms.tpms_on_grid(name, N, periods=periods, sheet=sheet, phase=phase)
@@ -319,5 +585,18 @@ def tpms_field(cell, name="gyroid", N=64, sheet=False, periods=(1, 1, 1), phase=
 
 
 def custom_field(cell, f, name="custom") -> UnitField:
-    """Wrap your own periodic N^3 array (solid where f >= threshold)."""
+    """Wrap your own periodic field.
+
+    Parameters
+    ----------
+    cell : UnitCell, float or array_like
+    f : array_like, shape (N, N, N)
+        Samples at fractional coordinates ``n / N``; must be periodic.
+        The solid is ``f >= threshold``.
+    name : str, optional
+
+    Returns
+    -------
+    UnitField
+    """
     return UnitField(cell, f, name=name, method="custom")

@@ -427,45 +427,75 @@ def mesh_instanced(field: UnitField, rho=0.3, cells=(1, 1, 1), seam_spacing=None
                    edge_length=None, remesh="isotropic", density_correct=True,
                    exact_density=True, anisotropy=4.0, quality_thr=0.1, verbose=False,
                    **remesh_kw) -> LatticeMesh:
-    """Lean mesh of a homogeneous (nx, ny, nz) block by unit-cell instancing.
+    """Lean mesh of a uniform, single-type block by repeating one unit cell.
 
-    seam_spacing : arc spacing of the simplified seam curves, in the CELL
-                   LENGTH UNIT (mm), like every other length in the API.
-                   If set, the seam curves (periodic face loops, cap rims,
-                   cube-edge chains) are subsampled consistently on the
-                   quotient graph and the interiors of body and caps are
-                   isotropically remeshed at ``edge_length``.  Useful range:
-                   1/16 .. 1/8 of the cell edge.  This is the strongest,
-                   most uniform simplification.
-    edge_length  : target triangle edge of the interior remesh (mm).
-                   Default: ``seam_spacing`` when that is given, otherwise
-                   pymeshlab's 1 % of the bounding box.  With
-                   ``seam_spacing=None`` it sets the interior target of the
-                   frozen-seams isotropic remesh (the seams themselves stay
-                   at marching-cubes density).
-    remesh       : how the interiors are simplified.  With ``seam_spacing``
-                   set: 'isotropic' (uniform triangles of ``edge_length``)
-                   or 'decimate' (quadric edge collapse to the face budget
-                   of an isotropic mesh divided by ``anisotropy``; long
-                   triangles along straight struts, 3-5x fewer faces).
-                   With ``seam_spacing=None``: 'isotropic', 'decimate'
-                   (seams frozen at marching density) or None / False for
-                   raw instancing without pymeshlab.
-                   Both lengths must be at least one voxel
-                   (``field.voxel_size``); smaller values almost always mean
-                   a unit mix-up and raise a ValueError.
-    anisotropy   : 'decimate' with seams: allowed mean triangle elongation
-                   (face budget divisor).
-    quality_thr  : 'decimate' with seams: minimum triangle quality accepted
-                   by the collapse (0..1; lower = longer triangles).
-    density_correct : simplification shifts the volume slightly (coarse
-                   seams inscribe the strut sections, smoothing shrinks);
-                   measure the unit-cell density and iterate the isovalue
-                   (secant, up to 4 rebuilds) until it matches ``rho``.
-    exact_density : calibrate the starting isovalue on the meshed unit-cell
-                   volume rather than the voxel quantile.
+    The mesh of a homogeneous block is periodic, so one unit cell (open at
+    its faces) and the six cap patterns are meshed, simplified while keeping
+    the interfaces consistent, then repeated with integer offsets and welded
+    exactly. Time and memory do not depend on the block size, and the result
+    is typically 10 to 50 times leaner than :func:`mesh_stack`.
 
-    Returns a welded :class:`LatticeMesh` with outward normals.
+    Parameters
+    ----------
+    field : UnitField
+        The lattice; graded or mixed blocks need :func:`mesh_stack`.
+    rho : float, optional
+        Target volume fraction, strictly inside (0, 1).
+    cells : tuple of 3 int, optional
+        Block size in cells.
+    seam_spacing : float, optional
+        Spacing of the simplified seam curves (mm, like every length here).
+        If given, the seams (periodic face loops, cap rims, cube-edge chains)
+        are subsampled once on the quotient cell, so every piece and its
+        periodic partners keep identical vertices, and the interiors are
+        remeshed against them. Useful range: 1/50 to 1/8 of the cell edge.
+        ``None`` freezes the seams at marching-cubes density.
+    edge_length : float, optional
+        Target triangle edge of the interior remesh (mm). Default:
+        ``seam_spacing`` if given, otherwise 1 % of the bounding box.
+    remesh : {'isotropic', 'decimate', None}, optional
+        How interiors are simplified. ``'isotropic'``: near-equilateral
+        triangles of ``edge_length``. ``'decimate'``: quadric edge collapse to
+        the isotropic face budget divided by ``anisotropy``, so triangles
+        stretch along straight struts (3 to 5 times fewer faces). ``None``:
+        raw instancing, no pymeshlab needed.
+    density_correct : bool, optional
+        Simplification shrinks the solid slightly; measure the unit-cell
+        density and iterate the isovalue (up to 4 rebuilds) until it matches.
+    exact_density : bool, optional
+        Start from the calibrated isovalue rather than the voxel quantile.
+    anisotropy : float, optional
+        ``'decimate'`` with seams: allowed mean triangle elongation.
+    quality_thr : float, optional
+        ``'decimate'`` with seams: minimum triangle quality (0 to 1; lower
+        allows longer triangles).
+    verbose : bool, optional
+    **remesh_kw
+        Passed to the isotropic remesher.
+
+    Returns
+    -------
+    LatticeMesh
+        Welded, watertight, outward normals.
+
+    Raises
+    ------
+    ValueError
+        If ``seam_spacing`` or ``edge_length`` is below one voxel, which
+        almost always means a unit mix-up.
+
+    Notes
+    -----
+    Needs ``pymeshlab`` unless ``remesh`` is None. A grid of a quarter
+    printer pixel (``latticegen.app.default_grid(..., instanced=True)``)
+    gives the cleanest seams.
+
+    Examples
+    --------
+    >>> import latticegen as lg
+    >>> fld = lg.sdf_field(lg.UnitCell.cubic(1.0), "octet", N=80, smooth=0.02)
+    >>> lean = lg.mesh_instanced(fld, rho=0.25, cells=(8, 8, 8),
+    ...                          seam_spacing=0.02)            # doctest: +SKIP
     """
     f = field.f
     N = field.N

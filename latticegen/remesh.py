@@ -90,15 +90,44 @@ def _check_after(name, before: LatticeMesh, after: LatticeMesh, verbose):
 def decimate(mesh: LatticeMesh, target_faces=None, fraction=None, quality_thr=0.3,
              preserve_topology=True, planar=True, planar_weight=0.001,
              preserve_normal=True, verbose=False) -> LatticeMesh:
-    """Quadric edge-collapse decimation (Garland-Heckbert).
+    """Quadric edge-collapse decimation (Garland and Heckbert).
 
-    target_faces / fraction : the face budget (one of the two).
-    quality_thr  : minimum triangle quality accepted (0..1; higher = more
-                   isotropic triangles, less reduction).
-    preserve_topology : forbid collapses that change the genus or create
-                   non-manifold configurations (keeps struts connected).
-    planar       : add a planar-quadric term so flat regions (the block caps)
-                   collapse into a few large triangles.
+    Parameters
+    ----------
+    mesh : LatticeMesh
+    target_faces : int, optional
+        Face budget. Give this or ``fraction``.
+    fraction : float, optional
+        Keep this fraction of the faces.
+    quality_thr : float, optional
+        Minimum triangle quality accepted, 0 to 1. Higher keeps triangles
+        more equilateral but reduces less.
+    preserve_topology : bool, optional
+        Forbid collapses that change the genus or create non-manifold edges,
+        so struts cannot merge or break.
+    planar : bool, optional
+        Add a planar-quadric term so the flat caps collapse into a few large
+        triangles.
+    planar_weight : float, optional
+        Weight of that term.
+    preserve_normal : bool, optional
+        Forbid collapses that flip a face.
+    verbose : bool, optional
+        Print face counts and the volume change.
+
+    Returns
+    -------
+    LatticeMesh
+        Cap vertices are snapped back onto the original bounding planes.
+
+    Warns
+    -----
+    RuntimeWarning
+        If a watertight input came out with open edges.
+
+    Notes
+    -----
+    Needs ``pymeshlab``.
     """
     if target_faces is None:
         if fraction is None:
@@ -117,8 +146,18 @@ def decimate(mesh: LatticeMesh, target_faces=None, fraction=None, quality_thr=0.
 
 
 def target_faces_for_edge_length(mesh: LatticeMesh, edge_length: float) -> int:
-    """Face count of an isotropic mesh of the same area with the given edge
-    length (equilateral triangles: area = sqrt(3)/4 h^2)."""
+    """Face count of an isotropic mesh of the same area with edge ``edge_length``.
+
+    Parameters
+    ----------
+    mesh : LatticeMesh
+    edge_length : float
+
+    Returns
+    -------
+    int
+        ``area / (sqrt(3) / 4 * edge_length^2)``, rounded up.
+    """
     return int(np.ceil(mesh.area / (np.sqrt(3) / 4 * edge_length ** 2)))
 
 
@@ -126,12 +165,32 @@ def simplify(mesh: LatticeMesh, edge_length=None, fraction=None, target_faces=No
              quality_thr=0.3, verbose=False, **kw) -> LatticeMesh:
     """Reduce the triangle count to what a print needs.
 
-    Give ONE of:
-      edge_length  : desired mean triangle edge (cell units, e.g. the DLP pixel
-                     size) -- the face budget is derived from the surface area;
-      fraction     : keep this fraction of the faces;
-      target_faces : absolute budget.
-    Uses quadric decimation with topology preservation and planar caps.
+    Quadric decimation with topology preservation and planar caps. Give one
+    of ``edge_length``, ``fraction`` or ``target_faces``.
+
+    Parameters
+    ----------
+    mesh : LatticeMesh
+    edge_length : float, optional
+        Desired mean triangle edge (mm); about one printer pixel is enough.
+        The face budget is derived from the surface area.
+    fraction : float, optional
+        Keep this fraction of the faces.
+    target_faces : int, optional
+        Absolute face budget.
+    quality_thr : float, optional
+        See :func:`decimate`.
+    verbose : bool, optional
+    **kw
+        Passed to :func:`decimate`.
+
+    Returns
+    -------
+    LatticeMesh
+
+    Examples
+    --------
+    >>> lean = mesh.simplify(edge_length=0.05)       # doctest: +SKIP
     """
     if edge_length is not None:
         target_faces = target_faces_for_edge_length(mesh, edge_length)
@@ -142,12 +201,36 @@ def simplify(mesh: LatticeMesh, edge_length=None, fraction=None, target_faces=No
 def remesh_isotropic(mesh: LatticeMesh, edge_length: float, iterations=10,
                      feature_deg=30.0, adaptive=False, reproject=True,
                      max_surface_dist=None, verbose=False) -> LatticeMesh:
-    """Isotropic explicit remeshing (split / collapse / flip / smooth) to a
-    uniform target edge length.  Sharp creases (dihedral angle above
-    ``feature_deg``, e.g. cap rims) are preserved.  Slower than decimation
-    but yields near-equilateral triangles suited to FEA.
+    """Isotropic explicit remeshing to near-equilateral triangles.
 
-    max_surface_dist : reprojection tolerance (default 0.5 * edge_length).
+    Repeated edge split, collapse, flip and tangential smoothing with
+    re-projection onto the input surface. Slower than decimation, and the
+    smoothing shrinks thin features by a few per cent, so it suits
+    finite-element meshes rather than print files.
+
+    Parameters
+    ----------
+    mesh : LatticeMesh
+    edge_length : float
+        Target edge length (mm).
+    iterations : int, optional
+    feature_deg : float, optional
+        Creases sharper than this dihedral angle (the cap rims) are kept.
+    adaptive : bool, optional
+        Let the edge length adapt to curvature.
+    reproject : bool, optional
+        Project vertices back onto the input surface.
+    max_surface_dist : float, optional
+        Re-projection tolerance; default ``0.5 * edge_length``.
+    verbose : bool, optional
+
+    Returns
+    -------
+    LatticeMesh
+
+    Notes
+    -----
+    Needs ``pymeshlab``.
     """
     ms = _to_meshset(mesh)
     kw = dict(iterations=int(iterations), adaptive=adaptive, selectedonly=False,
@@ -169,16 +252,25 @@ def remesh_isotropic(mesh: LatticeMesh, edge_length: float, iterations=10,
 
 def remove_islands(mesh: LatticeMesh, min_faces=None, min_volume_fraction=None,
                    keep="all_large", verbose=False) -> LatticeMesh:
-    """Drop small disconnected components.
+    """Delete small disconnected pieces (they would float in the resin vat).
 
-    A lattice block should be ONE connected solid; slivers cut off at the
-    boundary or pinched-off struts would float in the resin vat.
+    Parameters
+    ----------
+    mesh : LatticeMesh
+    min_faces : int, optional
+        Drop components with fewer faces.
+    min_volume_fraction : float, optional
+        Drop components whose volume is below this fraction of the largest.
+        Default 1e-3 when neither threshold is given.
+    keep : {'all_large', 'largest'}, optional
+        ``'largest'`` keeps only the largest component and ignores the
+        thresholds.
+    verbose : bool, optional
 
-    min_faces            : components with fewer faces are removed.
-    min_volume_fraction  : components whose |volume| is below this fraction
-                           of the largest one are removed (default 1e-3
-                           when neither criterion is given).
-    keep='largest'       : keep only the largest component.
+    Returns
+    -------
+    LatticeMesh
+        Unreferenced vertices are dropped.
     """
     labels, n = mesh.components()
     if n <= 1:
@@ -215,9 +307,30 @@ def remove_islands(mesh: LatticeMesh, min_faces=None, min_volume_fraction=None,
 
 def repair(mesh: LatticeMesh, fill_holes=True, max_hole_edges=100, orient=True,
            verbose=False) -> LatticeMesh:
-    """Clean-up pass: weld duplicate vertices, drop duplicate / degenerate
-    faces, repair non-manifold edges, fill small holes, orient faces
-    coherently with outward normals."""
+    """Standard clean-up for meshes that came from elsewhere or were edited.
+
+    Removes duplicate vertices and faces, degenerate and non-manifold
+    geometry, fills small holes, makes the orientation consistent and flips
+    the mesh if its volume is negative.
+
+    Parameters
+    ----------
+    mesh : LatticeMesh
+    fill_holes : bool, optional
+    max_hole_edges : int, optional
+        Largest hole (in boundary edges) that is filled.
+    orient : bool, optional
+        Make face orientation consistent.
+    verbose : bool, optional
+
+    Returns
+    -------
+    LatticeMesh
+
+    Notes
+    -----
+    Needs ``pymeshlab``.
+    """
     ms = _to_meshset(mesh)
     ms.meshing_remove_duplicate_vertices()
     ms.meshing_remove_duplicate_faces()
