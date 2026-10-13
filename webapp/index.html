@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lattice Generator</title>
+  <meta name="description" content="Generate periodic lattices for 3D printing and download them as STL.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 4L28 28M28 4L4 28M16 2V30M2 16H30' stroke='%23E3A008' stroke-width='3'/></svg>">
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <div class="app">
+    <form class="panel" id="form" autocomplete="off" novalidate>
+      <header class="brand">
+        <h1>Lattice Generator</h1>
+        <p id="tagline">Periodic lattices for resin printing, built in your browser. Nothing is uploaded.</p>
+      </header>
+
+      <label class="field">
+        <span>Start from</span>
+        <select id="preset">
+          <option value="">Custom</option>
+          <option value="octet20">1 mm octet beams, 20 % dense, 20 × 20 × 20</option>
+          <option value="gyroid">Gyroid sheet, 2 mm cells, 25 % dense</option>
+          <option value="graded">Graded bcc, 15 % at the bottom to 40 % at the top</option>
+          <option value="smooth">Octet with rounded joints, 2 mm cells</option>
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Shape</legend>
+        <div class="segmented" role="radiogroup" aria-label="Construction">
+          <label><input type="radio" name="method" value="struts" checked><span>Beams</span></label>
+          <label><input type="radio" name="method" value="sdf"><span>Rounded beams</span></label>
+          <label><input type="radio" name="method" value="fourier"><span>Organic</span></label>
+          <label><input type="radio" name="method" value="tpms"><span>Surfaces</span></label>
+        </div>
+        <p class="hint" id="method-hint"></p>
+        <label class="field">
+          <span id="topology-label">Lattice</span>
+          <select name="topology" id="topology"></select>
+        </label>
+        <label class="check only-tpms"><input type="checkbox" name="sheet"> Thin sheet instead of solid channels</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Cell</legend>
+        <div class="row">
+          <label class="field" id="a-field">
+            <span>Cell size</span>
+            <span class="unit"><input type="number" name="a" value="1" min="0.05" step="any" required><i>mm</i></span>
+          </label>
+        </div>
+        <details id="general-cell">
+          <summary>Non-cubic cell</summary>
+          <div class="row three">
+            <label class="field"><span>a</span><span class="unit"><input type="number" name="ca" value="1" min="0.05" step="any"><i>mm</i></span></label>
+            <label class="field"><span>b</span><span class="unit"><input type="number" name="cb" value="1" min="0.05" step="any"><i>mm</i></span></label>
+            <label class="field"><span>c</span><span class="unit"><input type="number" name="cc" value="1" min="0.05" step="any"><i>mm</i></span></label>
+            <label class="field"><span>α</span><span class="unit"><input type="number" name="calpha" value="90" min="30" max="150" step="1"><i>°</i></span></label>
+            <label class="field"><span>β</span><span class="unit"><input type="number" name="cbeta" value="90" min="30" max="150" step="1"><i>°</i></span></label>
+            <label class="field"><span>γ</span><span class="unit"><input type="number" name="cgamma" value="90" min="30" max="150" step="1"><i>°</i></span></label>
+          </div>
+          <p class="hint">Opening this replaces the cell size above. Edge lengths a, b, c and the angles between them.</p>
+        </details>
+      </fieldset>
+
+      <fieldset>
+        <legend>Density</legend>
+        <div class="segmented small" role="radiogroup" aria-label="Density mode">
+          <label><input type="radio" name="density" value="uniform" checked><span>Uniform</span></label>
+          <label id="graded-option"><input type="radio" name="density" value="graded"><span>Graded in height</span></label>
+        </div>
+        <div class="row only-uniform">
+          <label class="field">
+            <span>Solid fraction</span>
+            <span class="unit"><input type="number" name="rho" value="20" min="1" max="90" step="1"><i>%</i></span>
+          </label>
+        </div>
+        <div class="row only-graded">
+          <label class="field"><span>Bottom</span><span class="unit"><input type="number" name="rho0" value="15" min="1" max="90" step="1"><i>%</i></span></label>
+          <label class="field"><span>Top</span><span class="unit"><input type="number" name="rho1" value="40" min="1" max="90" step="1"><i>%</i></span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Block</legend>
+        <div class="row three">
+          <label class="field"><span>Cells in x</span><input type="number" name="nx" value="3" min="1" max="200" step="1"></label>
+          <label class="field"><span>in y</span><input type="number" name="ny" value="3" min="1" max="200" step="1"></label>
+          <label class="field"><span>in z (height)</span><input type="number" name="nz" value="3" min="1" max="200" step="1"></label>
+        </div>
+      </fieldset>
+
+      <details class="more">
+        <summary>More settings</summary>
+        <div class="row only-struts">
+          <label class="field">
+            <span>Beam cross-section</span>
+            <select name="sides">
+              <option value="6">Hexagon (6 sides)</option>
+              <option value="8">Octagon (8 sides)</option>
+              <option value="12" selected>12 sides</option>
+              <option value="16">16 sides (near round)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Joints</span>
+            <select name="node">
+              <option value="union" selected>Beam-sized</option>
+              <option value="hull">Hull (bigger, fewer triangles)</option>
+              <option value="round">Rounded bulge</option>
+            </select>
+          </label>
+        </div>
+        <label class="field only-sdf">
+          <span>Joint rounding</span>
+          <span class="unit wide"><input type="number" name="smooth" value="2" min="0" max="10" step="any"><i>% of cell</i></span>
+          <small class="hint">0 gives sharp joints. Larger values thicken the joints quickly.</small>
+        </label>
+        <label class="field only-fourier">
+          <span>Joint slimming</span>
+          <input type="number" name="node_comp" value="0" min="0" max="1" step="any">
+          <small class="hint">0 (off) to 1. Higher values keep joints closer to the beam thickness.</small>
+        </label>
+        <label class="field only-field">
+          <span>Detail (grid points per cell)</span>
+          <input type="number" name="N" placeholder="auto" min="16" max="256" step="8">
+          <small class="hint" id="n-hint">Blank picks enough detail for your printer pixel.</small>
+        </label>
+        <fieldset class="only-native lighter">
+          <legend>Lighter mesh</legend>
+          <label class="check only-field"><input type="checkbox" name="instanced"> Build one cell and repeat it, with matching seams (uniform density only)</label>
+          <div class="row only-field only-instanced">
+            <label class="field">
+              <span>Seam points per cell edge</span>
+              <input type="number" name="seam_points" value="50" min="4" max="400" step="1">
+            </label>
+            <label class="field">
+              <span>Inside the cell</span>
+              <select name="remesh">
+                <option value="isotropic" selected>Even triangles</option>
+                <option value="decimate">Fewest triangles</option>
+              </select>
+            </label>
+          </div>
+          <label class="field only-field">
+            <span>Triangle size</span>
+            <span class="unit"><input type="number" name="edge_length" placeholder="off" min="0" step="any"><i>mm</i></span>
+            <small class="hint" id="edge-hint">About one printer pixel is enough for printing. Blank keeps every grid triangle.</small>
+          </label>
+          <label class="check"><input type="checkbox" name="repair"> Repair the mesh (weld, fill small holes, fix normals)</label>
+        </fieldset>
+        <div class="row">
+          <label class="field"><span>Printer pixel</span><span class="unit"><input type="number" name="pixel" value="0.05" min="0.005" step="any"><i>mm</i></span></label>
+          <label class="field"><span>Layer height</span><span class="unit"><input type="number" name="layer" value="0.05" min="0.005" step="any"><i>mm</i></span></label>
+        </div>
+        <label class="check"><input type="checkbox" name="islands" checked> Remove small floating pieces (slivers cut off at the block edges)</label>
+        <label class="check"><input type="checkbox" name="check" checked> Check printability (thin beams, trapped resin, file size)</label>
+      </details>
+
+      <div class="actions">
+        <p class="estimate" id="estimate" aria-live="polite"></p>
+        <div class="buttons">
+          <button type="submit" id="generate" class="primary" disabled>Generate</button>
+          <button type="button" id="cancel" hidden>Cancel</button>
+        </div>
+      </div>
+    </form>
+
+    <main class="stage">
+      <div class="plate" id="plate">
+        <div class="empty" id="empty">
+          <p class="lead">Choose a lattice and press Generate.</p>
+          <p>The first start loads the Python engine (about 40 MB). Your browser keeps it for next time.</p>
+        </div>
+        <div class="overlay top">
+          <span class="status" id="status" role="status">Starting…</span>
+          <div class="view-tools" role="group" aria-label="View">
+            <label class="toggle"><input type="checkbox" id="view-smooth"> Gouraud shading</label>
+            <label class="toggle"><input type="checkbox" id="view-edges"> Triangle edges</label>
+            <div class="swatch-menu">
+              <button type="button" id="view-color" aria-haspopup="true" aria-expanded="false"
+                      aria-controls="view-colors" title="Lattice colour">
+                <i class="swatch" id="view-color-dot"></i> Colour
+              </button>
+              <div class="swatches" id="view-colors" role="radiogroup" aria-label="Lattice colour" hidden></div>
+            </div>
+          </div>
+        </div>
+        <div class="overlay bottom">
+          <span class="dims" id="dims"></span>
+          <button type="button" id="download" class="primary" hidden>Download STL</button>
+        </div>
+        <div class="progress" id="progress" hidden></div>
+      </div>
+      <section class="report" aria-label="Results">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="dlp" aria-selected="true">Printability</button>
+          <button type="button" role="tab" data-tab="mesh" aria-selected="false">Mesh</button>
+          <button type="button" role="tab" data-tab="log" aria-selected="false">Log</button>
+        </div>
+        <pre id="tab-dlp" class="tab">Results appear here after a run.</pre>
+        <pre id="tab-mesh" class="tab" hidden></pre>
+        <pre id="tab-log" class="tab" hidden></pre>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

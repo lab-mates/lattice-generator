@@ -335,17 +335,18 @@ is 660 per cell.
 ## 9. Lean meshes: explicit struts
 
 For strut topologies the leanest mesh needs no field at all: every strut
-is an n-gon prism (two rings, `2n` triangles whatever its length) and every
-node is the convex hull of the rings of the struts meeting there. The
-maths is in [fundamentals, section 11](fundamentals.md#11-explicit-strut-meshes-prisms-and-hull-nodes).
+is an n-gon prism (two rings, `2n` triangles whatever its length), and by
+default every node is the union of the strut ends and a strut-sized sphere.
+The joints are no bigger than the struts.
+The maths is in [fundamentals, section 11](fundamentals.md#11-explicit-strut-meshes-prisms-and-hull-nodes).
 
 ```python
 cube = lg.mesh_struts(lg.UnitCell.cubic(1.0), "octet", rho=0.20, cells=(20, 20, 20))
-cube.export("octet_2cm.stl")               # 5.4 M faces, 270 MB, ~5 s, ~0.6 GB RAM
+cube.export("octet_2cm.stl")               # 9.9 M faces, 500 MB, ~5 s (5.4 M with node="hull")
 print(lg.format_report(lg.dlp_report(cube, pixel_mm=0.05)))   # sizes come from the mesh itself
 ```
 
-`mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6, node="hull", round_points=64, verbose=False)`
+`mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6, node="union", round_points=64, verbose=False)`
 
 * `topology`: a built-in name or a `Skeleton` (isolated `points` are
   ignored). Any `UnitCell`.
@@ -358,10 +359,15 @@ print(lg.format_report(lg.dlp_report(cube, pixel_mm=0.05)))   # sizes come from 
   thinnest dimension is `2 r cos(pi/sides)`. With struts of one or two
   pixels 4 to 6 sides are indistinguishable in print; 8 to 12 for thick
   struts.
-* `node="hull"` (default): convex hull of the rings, node vertices at
-  about `2 r` for the octet. `node="round"`: a sampled sphere is added to
-  the hull (rounded convex bulge, ~+50 % faces). Neither produces concave
-  fillets; for those use `sdf_field(..., smooth=k)` and `mesh_instanced`.
+* `node="union"` (default): joints the size of the struts. Nothing lies
+  farther than `r` from the skeleton. Needs `manifold3d` (a pip dependency);
+  ~1.9x the triangles of hull nodes for the octet.
+  `node="hull"`: convex hull of the rings, no extra dependency, but node
+  vertices at about `2 r` for the octet (1.4-2 r depending on the angles).
+  `node="round"`: a sampled sphere added to the hull (rounded convex
+  bulge). None produces concave fillets; for those use
+  `sdf_field(..., smooth=k)` and `mesh_instanced`. See
+  [`img/joints-union-vs-hull.png`](img/joints-union-vs-hull.png).
 * Boundary: every strut whose two nodes lie inside the closed block is
   kept whole, so the outer faces carry complete nodes, the part is about
   `2 r` larger than `n a`, and `mesh.relative_density` (volume over the
@@ -373,10 +379,11 @@ print(lg.format_report(lg.dlp_report(cube, pixel_mm=0.05)))   # sizes come from 
   `min_thickness`, `sides`, `n_struts`, `n_nodes`, `bulk_density`,
   `analytic_volume`; `dlp_report(mesh)` reads them without a field.
 
-Triangles per cell (bulk): octet 656 with hexagons, 464 with squares;
-bcc 8 x 2n + 2 hulls ~ 250; sc ~ 100. A 20 x 20 x 20 octet block is 5.4 M
-faces (270 MB STL), against ~50 M for `mesh_instanced` at 0.05 mm
-triangles and ~1000 M for raw marching cubes at `N = 80`.
+Triangles per bulk cell with hexagons, union / hull nodes: octet 1287 / ~700,
+kelvin 1345 / 662, bcc 336 / 214, sc 181 / 101. A 20 x 20 x 20 octet block is
+9.9 M faces (500 MB STL) with union nodes and 5.4 M (270 MB) with hull nodes,
+against ~50 M for `mesh_instanced` at 0.05 mm triangles and ~1000 M for raw
+marching cubes at `N = 80`.
 
 What you give up: fillets and organic blends (convex nodes only),
 gradation (uniform radius; per-strut radii are a possible extension), and
@@ -473,14 +480,24 @@ nodes, section 9), `--a` or `--cell A B C ALPHA BETA GAMMA`, `--N`
 `--instanced`, `--seam-spacing` (mm), `--edge-length` (mm: decimation target, or the
 interior remesh target with `--instanced`), `--remesh {isotropic,decimate}`
 (interior treatment with `--instanced`), `--sides` and `--node {hull,round}`
-(with `--method struts`), `--repair`, `--check`, `--pixel`, `--layer`, `-o`, `-v`. If the package is
+(with `--method struts`; `--node` is `union` by default, or `hull` / `round`), `--repair`, `--remove-islands` (drop floating slivers,
+`mesh.remove_islands()` defaults), `--check`, `--pixel`, `--layer`, `-o`, `-v`. If the package is
 `pip install`ed, `latticegen` is also available as a console command.
+
+The same build is available from Python as `latticegen.app.build(topology, **options)`
+(keyword names as the CLI flags, `log=` for progress lines); the CLI and the browser
+app in `webapp/` both call it.
 
 ## 14. Recipes
 
 **Choose N for a printer.** `N = lg.recommend_grid(cell, pixel_mm)`; for a
 2 mm cell and 50 um pixels that is 80. Above ~128 the field arrays (N^3
-float32) and the meshes grow quickly.
+float32) and the meshes grow quickly. The CLI and the GUIs default to
+`latticegen.app.default_grid`: half a pixel but at least 80 for blocks, and
+a quarter pixel for `--instanced`. Only the unit cell is meshed there, and a
+finely traced cell remeshes better (1 mm cell, 0.05 mm pixel: N = 80).
+For the seams, 0.02 mm (50 points along a 1 mm cell edge) works well; the GUI
+asks for seam points per cell edge.
 
 **A strut radius you specify.** With a distance field `r = -threshold`, so
 invert numerically:
@@ -551,9 +568,10 @@ Memory rules of thumb:
 * pymeshlab decimation needs roughly 1 GB per 5 M input faces.
 * `mesh_struts` holds only the rings and hull triangles (~660 faces per
   octet cell): building and exporting a 20 x 20 x 20 block peaks at about
-  0.6 GB. `mesh.report()` / `dlp_report()` on 5 M faces (edge statistics,
-  components, Euler number) add roughly 1 GB on top; skip them for very
-  large blocks or run them on a small block of the same lattice.
+  0.6 GB. `mesh.check()` (behind `mesh.report()` and `dlp_report()`)
+  streams over the faces and sorts the edges once: about 4 s and 0.5 GB
+  extra on 5 M faces. Pass the result on (`mesh.report(c)`,
+  `dlp_report(..., check=c)`) instead of computing it twice.
 
 ## 16. Troubleshooting
 

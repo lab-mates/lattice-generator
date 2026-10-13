@@ -12,14 +12,21 @@ two rings, so for strut topologies the leanest mesh comes from the
 * the rings are pulled back from the node centre by
   ``d = r / tan(theta_min / 2)`` (theta_min = smallest angle between struts
   meeting there), which is exactly where two cylinders stop intersecting;
-* every node is the **convex hull** of its rings.  With that pull-back each
-  ring plane supports the hull, so the ring appears as one hull facet; that
-  facet is removed and the prism attaches to the opening.  Vertices are
-  shared by index, so the result is watertight without welding.
+* every node joins its rings.  The default ``node="union"`` makes the joint
+  the size of the struts: each strut's prism continues to the node centre
+  and is closed behind it by a strut-sized dome; the node is the union of
+  these convex pieces (mesh boolean, ``manifold3d``), so nothing reaches
+  farther than one strut radius from the node centre except the struts
+  themselves (~1.9x the triangles of hull nodes for the octet).  ``node="hull"`` (no extra dependency) takes the convex hull of
+  the rings instead, which bulges to ~1.4-2 strut radii.  Either way each
+  ring is one facet of the node; that facet is removed and the prism
+  attaches to the opening.  Vertices are shared by index, so the result is
+  watertight without welding.
 
 No scalar field, no marching cubes, no pymeshlab; memory is proportional to
 the number of struts.  An octet cell with hexagonal struts is ~660
-triangles (a marching-cubes cell at N = 80 is ~120 000).
+triangles with hull nodes (a marching-cubes cell at N = 80 is ~120 000).
+Node shapes scale with r and are computed once per node type.
 
 The unit-cell solid volume is a closed-form ``V(r) = alpha r^2 - beta r^3``
 (prisms minus pull-back plus hull volumes), so the density -> radius
@@ -45,6 +52,7 @@ from .mesh import LatticeMesh
 from .topologies import Skeleton, skeleton as _lookup_skeleton
 
 _MARGIN = 1.02          # pull-back safety factor over the exact intersection distance
+_SPHERE_CLEAR = 1.1     # x r: union nodes keep the rings beyond the node sphere
 _MIN_PULLBACK = 0.05    # x r, for (nearly) collinear strut pairs
 _KEY_DIGITS = 6         # rounding for node identity / signatures
 
@@ -82,6 +90,32 @@ def _pullback(dirs, r):
     return float(max(d, _MIN_PULLBACK * r))
 
 
+_HULL_UNION = None      # optional backend, e.g. Manifold's WebAssembly build under Pyodide
+
+
+def set_hull_union_backend(fn):
+    """Use ``fn(point_sets) -> (verts, tris, volume)`` (union of the convex
+    hulls of each (k, 3) point set, outward-oriented) instead of manifold3d."""
+    global _HULL_UNION
+    _HULL_UNION = fn
+
+
+def _hull_union(point_sets):
+    if _HULL_UNION is not None:
+        v, t, vol = _HULL_UNION(point_sets)
+        return np.asarray(v, float).reshape(-1, 3), np.asarray(t, np.int64).reshape(-1, 3), float(vol)
+    try:
+        import manifold3d
+    except ImportError as e:
+        raise ImportError("node='union' needs manifold3d (pip install manifold3d); "
+                          "node='hull' works without it") from e
+    hulls = [manifold3d.Manifold.hull_points(np.asarray(p, np.float64)) for p in point_sets]
+    u = manifold3d.Manifold.batch_boolean(hulls, manifold3d.OpType.Add)
+    m = u.to_mesh64()
+    return (np.asarray(m.vert_properties, np.float64)[:, :3], np.asarray(m.tri_verts, np.int64),
+            float(u.volume()))
+
+
 def _point_segment_distance(P, A, B):
     AB = B - A
     t = np.clip(np.einsum("ij,ij->i", P - A, AB) / np.einsum("ij,ij->i", AB, AB), 0.0, 1.0)
@@ -109,6 +143,50 @@ def _fibonacci_sphere(m):
     phi = np.arccos(1.0 - 2.0 * i / m)
     th = np.pi * (1.0 + 5 ** 0.5) * i
     return np.stack([np.cos(th) * np.sin(phi), np.sin(th) * np.sin(phi), np.cos(phi)], axis=1)
+
+
+def _sphere_points(sides):
+    """Points of the node sphere for strut polygons of ``sides`` sides."""
+    return _fibonacci_sphere(max(24, (2 * sides * sides) // 3))
+
+
+def _node_union(pts, ring_of, sides, r):
+    """Strut-sized node: the union of one convex piece per strut, each the
+    prism of the strut continued from its ring to the node centre and closed
+    behind the centre by a dome of the polygon's inradius.  Together they
+    contain the sphere of that radius; nothing reaches farther than r from the
+    node centre except the struts themselves.  (Prism stubs intersect along
+    few edges: about half the triangles of hull(ring, sphere) pieces.)
+
+    Same contract as :func:`_node_hull`: (triangles as local point indices,
+    closed volume, extra points); indices >= len(pts) are extra points.
+    """
+    from scipy.spatial import cKDTree
+    sph = r * np.cos(np.pi / sides) * _sphere_points(sides)
+    k = int(ring_of.max()) + 1
+    pieces = []
+    for j in range(k):
+        ring = pts[ring_of == j]
+        centre = ring.mean(axis=0)
+        u = centre / np.linalg.norm(centre)
+        pieces.append(np.vstack([ring, ring - centre, sph[sph @ u < -1e-9 * r]]))
+    V, T, vol = _hull_union(pieces)
+    # output vertex -> ring point (exact up to rounding) or new extra point
+    dist, idx = cKDTree(pts).query(V)
+    is_ring = dist < 1e-5 * r                      # float32 output from some backends
+    if np.unique(idx[is_ring]).size != len(pts) or is_ring.sum() != len(pts):
+        raise RuntimeError("union node lost or duplicated a ring vertex")
+    local = np.empty(len(V), np.int64)
+    local[is_ring] = idx[is_ring]
+    local[~is_ring] = len(pts) + np.arange((~is_ring).sum())
+    tri = local[T]
+    rid = np.full(len(pts) + (~is_ring).sum(), -1)
+    rid[:len(pts)] = ring_of
+    tr = rid[tri]
+    opening = (tr[:, 0] >= 0) & (tr[:, 0] == tr[:, 1]) & (tr[:, 1] == tr[:, 2])
+    if np.any(np.bincount(tr[opening][:, 0], minlength=k) != sides - 2):
+        raise RuntimeError("a strut ring is not a single facet of its union node")
+    return tri[~opening], vol, V[~is_ring]
 
 
 def _node_hull(pts, ring_of, sides, dirs, d, node, round_points):
@@ -230,6 +308,8 @@ class _Geometry:
             key = tuple(map(tuple, np.round(dirs, _KEY_DIGITS)))
             if key not in cache:
                 cache[key] = _pullback(dirs, r)
+                if self.node_kind == "union" and len(dirs) > 1:
+                    cache[key] = max(cache[key], _SPHERE_CLEAR * r)
             d[inc] = cache[key]
         return d
 
@@ -241,11 +321,12 @@ class _Geometry:
     def overlap_radius(self, samples=12, k=48):
         """Largest radius before primitives that do not share a node touch:
         prisms are bounded by cylinders of radius r, hulls by spheres of
-        radius R(r) = r sqrt(d1^2 + 1); the closest node pair, node /
+        radius R(r) = r sqrt(d1^2 + 1) (union nodes by r); the closest node pair, node /
         non-incident strut pair and non-adjacent strut pair set the limit."""
         from scipy.spatial import cKDTree
         d1 = self.pullbacks(1.0)
-        R1 = float(np.sqrt(d1.max() ** 2 + 1.0))
+        # union nodes stay within r of the skeleton; hulls reach sqrt(d^2 + r^2)
+        R1 = 1.0 if self.node_kind == "union" else float(np.sqrt(d1.max() ** 2 + 1.0))
         A_, B_ = self.nodes[self.a], self.nodes[self.b]
         limits = []
         if len(self.nodes) > 1:
@@ -301,8 +382,11 @@ class _Geometry:
             sig = tuple(key[j] for j in srt) + (round(float(d[inc[0]]), 9),)
             if sig not in cache:
                 pts, ring_of = self._local_rings(inc, r, d)
-                cache[sig] = _node_hull(pts, ring_of, self.sides, self.ring_dir[inc], d[inc[0]],
-                                        self.node_kind, self.round_points)
+                if self.node_kind == "union":
+                    cache[sig] = _node_union(pts, ring_of, self.sides, r)
+                else:
+                    cache[sig] = _node_hull(pts, ring_of, self.sides, self.ring_dir[inc],
+                                            d[inc[0]], self.node_kind, self.round_points)
             tri, vol, extra = cache[sig]
             out[i] = (tri, inc, vol, extra)
         return out
@@ -341,7 +425,7 @@ class _Geometry:
 # public API
 # --------------------------------------------------------------------------- #
 
-def bulk_volume_coefficients(cell, topology, sides=6, node="hull", round_points=64):
+def bulk_volume_coefficients(cell, topology, sides=6, node="union", round_points=64):
     """(alpha, beta, r_max) with unit-cell solid volume V(r) = alpha r^2 - beta r^3
     for the periodic lattice (every node counted once per cell).  The formula
     (and the mesh) is valid up to ``r_max``, where primitives that do not
@@ -365,7 +449,7 @@ def bulk_volume_coefficients(cell, topology, sides=6, node="hull", round_points=
     return alpha, beta, r_max
 
 
-def radius_for_density(cell, topology, rho, sides=6, node="hull", round_points=64) -> float:
+def radius_for_density(cell, topology, rho, sides=6, node="union", round_points=64) -> float:
     """Strut circumradius giving bulk relative density ``rho`` (cell units)."""
     cell = as_cell(cell)
     alpha, beta, r_max = bulk_volume_coefficients(cell, topology, sides, node, round_points)
@@ -379,8 +463,8 @@ def radius_for_density(cell, topology, rho, sides=6, node="hull", round_points=6
 
 
 def mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6,
-                node="hull", round_points=64, verbose=False) -> LatticeMesh:
-    """Explicit prism-and-hull mesh of an (nx, ny, nz) block of a strut topology.
+                node="union", round_points=64, verbose=False) -> LatticeMesh:
+    """Explicit prism-and-node mesh of an (nx, ny, nz) block of a strut topology.
 
     cell     : UnitCell, 3x3 matrix or cubic edge length (mm).
     topology : built-in name ('octet', 'bcc', ...) or a Skeleton.
@@ -394,8 +478,11 @@ def mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6,
                above ``rho`` because of the extra boundary struts).
     sides    : polygon of the strut section (3..64).  Minimum thickness is
                2 r cos(pi/sides); with 1-2 pixel struts 4-6 sides suffice.
-    node     : 'hull' (convex hull of the strut rings) or 'round' (hull of
-               the rings plus a sampled sphere: rounded convex bulge).
+    node     : 'union' (default: joints the size of the struts -- the union
+               of the struts and a sphere of the strut radius; needs
+               manifold3d), 'hull' (convex hull of the strut rings: a bulge
+               of ~1.4-2 r, no extra dependency) or 'round' (hull of the
+               rings plus a sampled sphere: rounded convex bulge).
     round_points : sphere samples for node='round'.
 
     Returns a watertight :class:`LatticeMesh` (outward normals);
@@ -406,8 +493,8 @@ def mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6,
     sides = int(sides)
     if not 3 <= sides <= 64:
         raise ValueError("sides must be between 3 and 64")
-    if node not in ("hull", "round"):
-        raise ValueError("node must be 'hull' or 'round'")
+    if node not in ("union", "hull", "round"):
+        raise ValueError("node must be 'union', 'hull' or 'round'")
     if sk.points:
         warnings.warn("isolated skeleton points (spheres) are ignored by mesh_struts",
                       RuntimeWarning, stacklevel=2)
@@ -481,7 +568,7 @@ def mesh_struts(cell, topology, rho=None, radius=None, cells=(1, 1, 1), sides=6,
     area = polygon_area(r, sides)
     length = g.L - d[:g.n_struts] - d[g.n_struts:]
     vol = float((area * length).sum()) + sum(h[2] for h in hulls.values())
-    R = float(np.sqrt(d.max() ** 2 + r * r))
+    R = r if node == "union" else float(np.sqrt(d.max() ** 2 + r * r))
     info = dict(mode="struts", cells=n_ax, A=cell.A.copy(), box_volume=cell.volume * int(np.prod(n_ax)),
                 strut_radius=r, node_radius=R, min_thickness=2.0 * r * np.cos(np.pi / sides),
                 sides=sides, node=node, n_struts=int(g.n_struts), n_nodes=int(len(g.nodes)),

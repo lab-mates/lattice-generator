@@ -17,20 +17,27 @@ package.
 * **Meshing** with flat caps, exact welding, streamed memory use; density as a
   scalar, a per-cell array, a function of height, or any function of x, y, z;
   different topologies per cell.
-* **Lean meshes**: explicit prism-and-hull-node meshes straight from the
-  skeleton (no field, ~660 triangles per octet cell, a 20 x 20 x 20 block in
-  seconds); unit-cell instancing with seam-consistent simplification and
+* **Lean meshes**: explicit prism meshes straight from the skeleton, with
+  joints no bigger than the struts (no field, ~1300 triangles per octet
+  cell, a 20 x 20 x 20 block in seconds; ~700 with convex-hull joints); unit-cell instancing with seam-consistent simplification and
   isotropic or anisotropic interiors for field-based blocks; quadric
   decimation / isotropic remeshing / repair / island removal for everything
   else.
 * **DLP printability report**: strut, wall and pore sizes in pixels and
   layers, watertightness, floating parts, file size, resin mass.
-* Command-line interface.
+* Command-line interface, and two GUIs for colleagues who do not use Python,
+  sharing one front end with a 3D preview:
+  * `webapp/`: runs this package in the browser (WebAssembly), from a web page
+    or an offline zip; everything except the pymeshlab steps.
+  * `desktop/`: a Windows app (one zip, no install) with the native engine,
+    including simplification, seam-consistent instancing and repair.
 
 ## Install
 
 The package is pure Python. In the `general` conda environment everything
-needed is already present (numpy, scipy, scikit-image, trimesh, pymeshlab).
+needed is already present (numpy, scipy, scikit-image, trimesh, pymeshlab,
+manifold3d). `manifold3d` (`pip install manifold3d`) builds the default
+strut-sized joints of `mesh_struts`; `node="hull"` works without it.
 
 ```bash
 cd lattice-generator
@@ -57,8 +64,8 @@ mesh.export("octet_3x3x3.stl")
 lean = lg.mesh_instanced(field, rho=0.30, cells=(8, 8, 8), seam_spacing=0.17)   # mm
 lean.export("octet_8x8x8.stl")
 
-# thousands of cells: build the struts explicitly (prisms + hull nodes, no field);
-# a 2 cm cube of 1 mm cells is 5 M triangles and takes ~5 s
+# thousands of cells: build the struts explicitly (prisms + strut-sized joints, no field);
+# a 2 cm cube of 1 mm cells is 10 M triangles (5 M with node="hull") and takes ~5 s
 cube = lg.mesh_struts(lg.UnitCell.cubic(1.0), "octet", rho=0.20, cells=(20, 20, 20))
 cube.export("octet_2cm.stl")
 
@@ -98,10 +105,13 @@ latticegen/
   field.py       UnitField: density<->isovalue, feature sizes, builders
   meshing.py     mesh_stack: slab-streamed marching cubes with caps, graded density
   instanced.py   mesh_instanced: unit-cell instancing + seam-consistent simplification
-  struts.py      mesh_struts: explicit n-gon prisms + convex-hull nodes, closed-form density
+  struts.py      mesh_struts: explicit n-gon prisms + strut-sized (manifold3d) or hull nodes, closed-form density
   remesh.py      decimate / simplify / remesh_isotropic / repair / remove_islands
   mesh.py        LatticeMesh: diagnostics, export
   meshops.py     pure-numpy weld / watertight / volume / STL IO
   printing.py    DLP report and grid recommendation
+  app.py         build(): one-call lattice build shared by the CLI and the web app
   cli.py         command line
+webapp/          browser GUI (Pyodide + Three.js); see webapp/README.md
+desktop/         Windows app: same GUI + native engine; see desktop/README.md
 ```

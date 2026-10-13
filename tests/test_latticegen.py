@@ -296,7 +296,7 @@ class TestStruts(unittest.TestCase):
     """Explicit prism + hull-node mesher (no field, no pymeshlab)."""
 
     def test_octet_exact(self):
-        m = lg.mesh_struts(1.0, "octet", rho=0.2, cells=(2, 2, 2))
+        m = lg.mesh_struts(1.0, "octet", rho=0.2, cells=(2, 2, 2), node="hull")
         self.assertTrue(m.is_watertight)
         self.assertEqual(m.components()[1], 1)
         self.assertGreater(m.volume, 0)
@@ -326,7 +326,7 @@ class TestStruts(unittest.TestCase):
             self.assertTrue(m.is_watertight, topo)
             self.assertEqual(m.components()[1], 1, topo)
             self.assertAlmostEqual(m.volume, m.info["analytic_volume"], delta=1e-5 * m.volume)
-        hull = lg.mesh_struts(2.0, "octet", rho=0.2, cells=(1, 1, 1), sides=4)
+        hull = lg.mesh_struts(2.0, "octet", rho=0.2, cells=(1, 1, 1), sides=4, node="hull")
         rnd = lg.mesh_struts(2.0, "octet", rho=0.2, cells=(1, 1, 1), sides=4, node="round")
         oct8 = lg.mesh_struts(2.0, "octet", radius=0.12, cells=(1, 1, 1), sides=8)
         for m in (hull, rnd, oct8):
@@ -339,6 +339,46 @@ class TestStruts(unittest.TestCase):
         m = lg.mesh_struts(lg.UnitCell.tetragonal(1.0, 1.5), sk, rho=0.1, cells=(2, 2, 1))
         self.assertTrue(m.is_watertight)
         self.assertAlmostEqual(m.extents[2], 1.5 + 2 * m.info["strut_radius"], delta=1e-4)
+
+    def test_union_nodes_are_strut_sized(self):
+        from latticegen.struts import _block_struts, _point_segment_distance
+        for topo in ("octet", "bcc", "kelvin", "bccz"):
+            m = lg.mesh_struts(1.0, topo, rho=0.2, cells=(2, 2, 2))          # node="union" default
+            self.assertEqual(m.info["node"], "union")
+            self.assertTrue(m.is_watertight, topo)
+            self.assertAlmostEqual(m.volume, m.info["analytic_volume"], delta=1e-5 * m.volume)
+            r = m.info["strut_radius"]
+            self.assertEqual(m.info["node_radius"], r)
+            # every vertex lies within one strut radius of the skeleton (hull nodes reach ~2 r)
+            P, Q = _block_struts(lg.skeleton(topo), (2, 2, 2))
+            V = m.verts.astype(float)
+            dmin = np.full(len(V), np.inf)
+            for a, b in zip(P, Q):
+                dmin = np.minimum(dmin, _point_segment_distance(V, np.broadcast_to(a, V.shape),
+                                                                np.broadcast_to(b, V.shape)))
+            self.assertLess(dmin.max(), r * (1 + 1e-5), topo)
+        # same density, smaller nodes -> thicker struts than with hull nodes
+        self.assertGreater(lg.radius_for_density(1.0, "octet", 0.2),
+                           lg.radius_for_density(1.0, "octet", 0.2, node="hull"))
+
+    def test_union_backend_override(self):
+        from latticegen import struts
+        calls = []
+
+        def backend(point_sets):
+            calls.append(len(point_sets))
+            struts.set_hull_union_backend(None)
+            try:
+                return struts._hull_union(point_sets)
+            finally:
+                struts.set_hull_union_backend(backend)
+        struts.set_hull_union_backend(backend)
+        try:
+            m = lg.mesh_struts(1.0, "bcc", rho=0.2, cells=(1, 1, 1))
+        finally:
+            struts.set_hull_union_backend(None)
+        self.assertTrue(calls)
+        self.assertTrue(m.is_watertight)
 
     def test_bad_inputs(self):
         with self.assertRaises(ValueError):

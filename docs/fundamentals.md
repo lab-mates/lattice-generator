@@ -472,12 +472,34 @@ nodes) needs a handful of hulls. A node with a single strut (a strut that
 reaches the block boundary and stops, as bcc corners do) is closed by a
 flat `n`-gon cap.
 
-Vertices are shared by index between prisms and hulls, so the mesh is
-watertight by construction and no welding or tolerance is involved.
+**Strut-sized (union) nodes, the default.** The hull has to enclose rings
+that sit `d` from the centre, so its outer vertices reach `sqrt(d^2 + r^2)`,
+twice the strut radius for the octet. `node="union"` instead builds one
+convex piece per strut: its prism continued from the ring to the node
+centre, closed behind the centre by a dome of the polygon's inradius
+`r cos(pi/n)`. A point closer than 90 degrees to some strut and within that
+inradius of the centre lies in that strut's prism, and any other point lies in
+the dome of a strut pointing away from it. So the pieces together contain the ball of the
+inradius, and no point of the node is farther than `r` from the skeleton.
+The node is the union of the pieces, a mesh boolean done by `manifold3d`
+(Manifold's WebAssembly build in the browser app). Rings sit at
+`max(d, 1.1 r)` so that every ring stays one facet of the union, and the
+ring facets are removed exactly as for hull nodes. Each distinct node is
+computed once and everything scales with `r`, so the closed-form density below
+still holds. The cost is triangles, because the prisms intersect along polylines.
+An octet bulk cell has 1287 triangles (hull: ~700), bcc 336, kelvin 1345.
+At the same density the struts come out slightly thicker
+(octet 20 %: `r` 0.0752 vs 0.0741 mm for 1 mm cells), because the nodes hold less
+material. Overlap limits also relax, since union nodes extend only `r`; fcc +
+bcc combined reaches a bulk density of 0.63 instead of 0.20 (octet: 0.83 vs 0.79).
+
+Vertices are shared by index between prisms and nodes, so the mesh is
+watertight by construction and no welding is involved (union nodes match
+their ring vertices to the boolean's output within `1e-5 r`).
 
 **Density.** The solid volume of one period is in closed form:
 
-    V(r) = sum_struts A_n(r) (L - d_a - d_b) + sum_nodes V_hull(r)
+    V(r) = sum_struts A_n(r) (L - d_a - d_b) + sum_nodes V_node(r)
          = alpha r^2 - beta r^3,       A_n(r) = (n/2) r^2 sin(2 pi / n)
 
 because `d` and the hull scale linearly with `r`. The strut radius for a
@@ -486,8 +508,8 @@ bracketing in microseconds; no meshing or calibration loop is needed and
 the meshed volume equals the formula to float32 rounding. The formula, and
 the mesh, are valid while primitives that share no node stay apart:
 `r_max` is the smallest of half the nearest node distance over
-`sqrt(d1^2 + 1)`, the node to non-incident strut distance over
-`sqrt(d1^2 + 1) + 1`, half the nearest non-adjacent strut distance, and the
+`R1 = sqrt(d1^2 + 1)` (1 for union nodes), the node to non-incident strut distance over
+`R1 + 1`, half the nearest non-adjacent strut distance, and the
 radius at which `d_a + d_b` reaches a strut length (`d1 = d / r`). For the
 octet this is `r = 0.174 a`, a bulk density of 0.79; higher values raise a
 `ValueError` (fcc + bcc combined, whose struts pass close to each other,

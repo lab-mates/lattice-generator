@@ -31,7 +31,7 @@ def recommend_grid(cell, pixel_mm: float, oversample: float = 2.0, minimum: int 
 def dlp_report(mesh: LatticeMesh | None = None, field: UnitField | None = None, rho=None,
                pixel_mm: float = 0.05, layer_mm: float = 0.05, min_feature_px: float = 4.0,
                min_pore_mm: float | None = None, resin_density_g_cm3: float = 1.15,
-               shrinkage_pct: float = 0.0) -> dict:
+               shrinkage_pct: float = 0.0, check: dict | None = None) -> dict:
     """Printability summary for a DLP job (all lengths in mm).
 
     mesh            : the block to print (optional; gives size, volume, faces).
@@ -43,6 +43,8 @@ def dlp_report(mesh: LatticeMesh | None = None, field: UnitField | None = None, 
     min_pore_mm     : pores narrower than this are flagged (default 4 px).
     shrinkage_pct   : expected linear shrinkage (post-cure / pyrolysis); the
                       as-designed sizes are scaled to show the final part.
+    check           : a ``mesh.check()`` result to reuse (it is the costly part
+                      on multi-million-face meshes).
 
     Returns a dict; ``print(format_report(rep))`` for a readable summary.
     """
@@ -104,7 +106,7 @@ def dlp_report(mesh: LatticeMesh | None = None, field: UnitField | None = None, 
                  f"(< {min_feature_px} px): increase rho or the cell size")
 
     if mesh is not None:
-        c = mesh.check()
+        c = mesh.check() if check is None else check
         rep["mesh"] = c
         ext = np.asarray(c["extents"]) * s
         rep["extents_mm"] = tuple(float(x) for x in ext)

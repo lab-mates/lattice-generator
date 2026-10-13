@@ -86,27 +86,54 @@ class LatticeMesh:
     # ------------------------------------------------------------------ #
     # diagnostics
     # ------------------------------------------------------------------ #
-    def check(self) -> dict:
-        """Watertightness, orientation, components, volume, edge statistics."""
-        _, n_comp = self.components()
-        el = self.edge_lengths()
-        out = dict(n_vertices=self.n_vertices, n_faces=self.n_faces,
-                   watertight=self.is_watertight, volume=self.volume,
-                   area=self.area, components=n_comp,
+    def check(self, chunk=1_000_000) -> dict:
+        """Watertightness, orientation, components, volume, edge statistics.
+
+        Streams over face chunks and sorts the edge list once (watertightness,
+        Euler number and components all come from it), so a 5 M-face mesh
+        needs a few hundred MB of scratch memory instead of ~1 GB."""
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+        v, f = self.verts, self.faces
+        nv, nf = self.n_vertices, self.n_faces
+        keys = np.empty(3 * nf, np.int64)
+        el = np.empty(3 * nf, np.float32)
+        volume = area = 0.0
+        for s in range(0, nf, chunk):
+            fc = f[s:s + chunk]
+            e = meshops.edges_of(fc)
+            keys[3 * s:3 * s + 3 * len(fc)] = e[:, 0] * nv + e[:, 1]
+            el[3 * s:3 * s + 3 * len(fc)] = np.linalg.norm(v[e[:, 0]] - v[e[:, 1]], axis=1)
+            del e
+            v0, v1, v2 = (v[fc[:, i]].astype(np.float64) for i in range(3))
+            volume += float(np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0)
+            area += float(0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1).sum())
+            del v0, v1, v2
+        uk, cnt = np.unique(keys, return_counts=True)
+        del keys
+        m = coo_matrix((np.ones(len(uk), np.float32),
+                        ((uk // nv).astype(np.int32), (uk % nv).astype(np.int32))), shape=(nv, nv))
+        _, vlab = connected_components(m, directed=False)
+        del m
+        n_comp = len(np.unique(vlab[f[:, 0]])) if nf else 0
+        out = dict(n_vertices=nv, n_faces=nf,
+                   watertight=bool(np.all(cnt == 2)), volume=volume,
+                   area=area, components=n_comp,
                    extents=tuple(float(x) for x in self.extents),
                    edge_min=float(el.min()) if len(el) else 0.0,
                    edge_median=float(np.median(el)) if len(el) else 0.0,
                    edge_max=float(el.max()) if len(el) else 0.0,
-                   euler=self.euler_number)
-        rd = self.relative_density
-        if rd is not None:
-            out["relative_density"] = rd
-        out["outward"] = self.volume > 0
+                   euler=int(nv - len(uk) + nf))
+        vb = self.info.get("box_volume")
+        if vb is not None:
+            out["relative_density"] = volume / vb
+        out["outward"] = volume > 0
         out["stl_size_MB"] = (84 + 50 * self.n_faces) / 1e6
         return out
 
-    def report(self) -> str:
-        c = self.check()
+    def report(self, check=None) -> str:
+        """Readable summary; pass ``check`` (a :meth:`check` result) to reuse it."""
+        c = self.check() if check is None else check
         lines = [f"vertices {c['n_vertices']:,}   faces {c['n_faces']:,}   "
                  f"(binary STL ~{c['stl_size_MB']:.1f} MB)",
                  f"watertight {c['watertight']}   outward normals {c['outward']}   "

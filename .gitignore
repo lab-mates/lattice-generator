@@ -5,3 +5,14 @@
 *.ply
 *.npz
 output/
+
+# web app: dependencies, downloaded Python runtime, build output, packages
+webapp/node_modules/
+webapp/public/pyodide/
+webapp/public/latticegen.zip
+webapp/dist/
+webapp/*.zip
+
+# desktop app build output
+desktop/dist/
+webapp/public/manifold/

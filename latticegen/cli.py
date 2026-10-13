@@ -20,68 +20,20 @@ import numpy as np
 
 
 def _build(args):
-    import latticegen as lg
+    from .app import build
     t_start = time.time()
-    cell = lg.UnitCell.cubic(args.a) if args.cell is None else lg.UnitCell.from_parameters(*args.cell)
-    N = args.N if args.N else lg.recommend_grid(cell, args.pixel)
-    method = args.method
-    cells = tuple(args.cells)
-    if method == "auto":
-        method = "tpms" if args.topology.lower() in lg.available_tpms() else "sdf"
-    if method == "struts":
-        # explicit prisms + hull nodes: no field, no marching cubes
-        if args.graded is not None or args.instanced:
-            raise SystemExit("--method struts takes neither --graded nor --instanced")
-        mesh = lg.mesh_struts(cell, args.topology, rho=args.rho, cells=cells, sides=args.sides,
-                              node=args.node, verbose=args.verbose)
-        print(f"mesh: {mesh}  ({time.time() - t_start:.1f} s)")
-        if args.repair:
-            mesh = mesh.repair(verbose=True)
-        print(mesh.report())
-        if args.check:
-            print(lg.format_report(lg.dlp_report(mesh, pixel_mm=args.pixel, layer_mm=args.layer)))
-        out = args.output or f"{args.topology}_{'x'.join(map(str, cells))}.stl"
-        mesh.export(out)
-        print(f"written {out}  ({time.time() - t_start:.1f} s total)")
-        return
-    if method == "sdf":
-        field = lg.sdf_field(cell, args.topology, N=N, smooth=args.smooth * cell.a_min)
-    elif method == "fourier":
-        field = lg.fourier_field(cell, args.topology, N=N, node_comp=args.node_comp)
-    elif method == "tpms":
-        field = lg.tpms_field(cell, args.topology, N=N, sheet=args.sheet)
-    else:
-        raise SystemExit(f"unknown method {method}")
-    print(f"field: {field}  ({time.time() - t_start:.1f} s)")
-
-    if args.graded is not None:
-        r0, r1 = args.graded
-        rho = lambda z: r0 + (r1 - r0) * z
-        rho_ref = 0.5 * (r0 + r1)
-    else:
-        rho = rho_ref = args.rho
-
-    if args.instanced:
-        if args.graded is not None:
-            raise SystemExit("--instanced needs a uniform density (no --graded)")
-        spacing = args.seam_spacing if args.seam_spacing else None
-        edge = args.edge_length if args.edge_length else None
-        mesh = lg.mesh_instanced(field, rho=rho, cells=cells, seam_spacing=spacing,
-                                 edge_length=edge, remesh=args.remesh, verbose=args.verbose)
-    else:
-        mesh = lg.mesh_stack(field, rho=rho, cells=cells, verbose=args.verbose)
-    print(f"mesh: {mesh}  ({time.time() - t_start:.1f} s)")
-
-    if args.edge_length and not args.instanced:
-        mesh = mesh.simplify(edge_length=args.edge_length, verbose=True)
-    if args.repair:
-        mesh = mesh.repair(verbose=True)
-    print(mesh.report())
-    if args.check:
-        print(lg.format_report(lg.dlp_report(mesh, field, rho_ref, pixel_mm=args.pixel,
-                                             layer_mm=args.layer)))
-    out = args.output or f"{args.topology}_{'x'.join(map(str, cells))}.stl"
-    mesh.export(out)
+    try:
+        res = build(args.topology, method=args.method, a=args.a, cell=args.cell, N=args.N,
+                    rho=args.rho, graded=args.graded, cells=args.cells, smooth=args.smooth,
+                    node_comp=args.node_comp, sheet=args.sheet, instanced=args.instanced,
+                    seam_spacing=args.seam_spacing, edge_length=args.edge_length,
+                    remesh=args.remesh, sides=args.sides, node=args.node, repair=args.repair,
+                    islands=args.remove_islands,
+                    check=args.check, pixel=args.pixel, layer=args.layer, verbose=args.verbose)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    out = args.output or res.filename
+    res.mesh.export(out)
     print(f"written {out}  ({time.time() - t_start:.1f} s total)")
 
 
@@ -129,7 +81,9 @@ def main(argv=None):
     b.add_argument("--a", type=float, default=1.0, help="cubic cell edge (mm)")
     b.add_argument("--cell", type=float, nargs=6, metavar=("A", "B", "C", "ALPHA", "BETA", "GAMMA"),
                    help="general cell parameters instead of --a")
-    b.add_argument("--N", type=int, default=0, help="grid samples per cell (default from --pixel)")
+    b.add_argument("--N", type=int, default=0,
+                   help="grid samples per cell (default: voxel <= pixel/2 and N >= 80; "
+                        "pixel/4 with --instanced)")
     b.add_argument("--rho", type=float, default=0.3, help="relative density (0-1)")
     b.add_argument("--graded", type=float, nargs=2, metavar=("RHO_BOTTOM", "RHO_TOP"),
                    help="linear density gradient along z")
@@ -147,9 +101,12 @@ def main(argv=None):
                    help="instanced: interior remesh (uniform triangles) or quadric decimation "
                         "(long triangles along struts, fewer faces)")
     b.add_argument("--sides", type=int, default=6, help="struts: polygon sides of the strut section")
-    b.add_argument("--node", default="hull", choices=["hull", "round"],
-                   help="struts: node shape (convex hull of the strut rings, or rounded)")
+    b.add_argument("--node", default="union", choices=["union", "hull", "round"],
+                   help="struts: joint shape: union (strut-sized, needs manifold3d), hull "
+                        "(convex hull of the strut rings, larger) or round (rounded bulge)")
     b.add_argument("--repair", action="store_true")
+    b.add_argument("--remove-islands", action="store_true",
+                   help="drop floating slivers (e.g. corners cut off at the block boundary)")
     b.add_argument("--check", action="store_true", help="print the DLP printability report")
     b.add_argument("--pixel", type=float, default=0.05, help="DLP pixel pitch (mm)")
     b.add_argument("--layer", type=float, default=0.05, help="layer thickness (mm)")

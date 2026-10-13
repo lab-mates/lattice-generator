@@ -1,0 +1,23 @@
+{
+  "name": "latticegen-webapp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser GUI for latticegen (Pyodide + Three.js)",
+  "scripts": {
+    "fetch-pyodide": "node scripts/fetch-pyodide.mjs",
+    "pack": "node scripts/pack-latticegen.mjs",
+    "dev": "npm run pack && vite",
+    "build": "npm run pack && vite build",
+    "preview": "vite preview",
+    "smoke": "npm run pack && node scripts/smoke.mjs",
+    "zip": "npm run build && node scripts/make-offline-zip.mjs"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.3",
+    "manifold-3d": "^3.5.4",
+    "pyodide": "^314.0.7",
+    "three": "^0.186.1",
+    "vite": "^8.3.4"
+  }
+}
