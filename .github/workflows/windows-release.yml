@@ -47,7 +47,8 @@ jobs:
       - name: Version
         id: version
         run: |
-          $v = python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('latticegen/__init__.py').read()).group(1))"
+          $v = (Select-String -Path latticegen/__init__.py -Pattern '__version__ = "([^"]+)"').Matches[0].Groups[1].Value
+          if (-not $v) { throw "__version__ not found in latticegen/__init__.py" }
           "version=$v" >> $env:GITHUB_OUTPUT
           if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$v") {
             throw "Tag ${{ github.ref_name }} does not match latticegen.__version__ $v"
