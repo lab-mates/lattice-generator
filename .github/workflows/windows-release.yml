@@ -42,7 +42,7 @@ jobs:
         # pip wheels on purpose (see desktop/README.md: conda's numpy/scipy bring MKL)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy scipy scikit-image trimesh manifold3d pymeshlab pywebview pyinstaller
+          python -m pip install numpy scipy scikit-image manifold3d pymeshlab pywebview pyinstaller
 
       - name: Version
         id: version

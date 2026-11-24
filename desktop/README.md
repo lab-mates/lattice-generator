@@ -59,7 +59,7 @@ To build locally instead, one-time setup in the Windows Miniconda:
 
 ```bat
 conda create -n latticegen-build -c conda-forge --override-channels python=3.14 pip
-%USERPROFILE%\miniconda3\envs\latticegen-build\python.exe -m pip install numpy scipy scikit-image pymeshlab pywebview pyinstaller
+%USERPROFILE%\miniconda3\envs\latticegen-build\python.exe -m pip install numpy scipy scikit-image manifold3d pymeshlab pywebview pyinstaller
 ```
 
 Use pip wheels, not conda's numpy/scipy: conda's builds bring Intel MKL, which is
