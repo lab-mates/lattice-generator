@@ -1,7 +1,7 @@
 """
 latticegen -- periodic lattice structures for 3D printing.
 
-Joaquin Ramirez-Rico, University of Seville (https://mates-lab.es/).
+MATES Lab, Universidad de Sevilla-CSIC (https://mates-lab.es/).
 
 Pipeline:  UnitCell  ->  Skeleton / TPMS  ->  UnitField  ->  LatticeMesh  ->  STL
 
@@ -33,8 +33,8 @@ from .plates import add_plates, set_union_backend
 from . import topologies, tpms, fourier, sdf, meshops
 
 __version__ = "1.0.0"
-__author__ = "Joaquin Ramirez-Rico"
-CREDIT = "Joaquin Ramirez-Rico, University of Seville, https://mates-lab.es/"
+__author__ = "MATES Lab, Universidad de Sevilla-CSIC"
+CREDIT = "MATES Lab, Universidad de Sevilla-CSIC, https://mates-lab.es/"
 
 __all__ = [
     "UnitCell", "Skeleton", "skeleton", "available_topologies", "available_tpms",

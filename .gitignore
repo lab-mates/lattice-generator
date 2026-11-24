@@ -18,8 +18,11 @@ desktop/dist/
 webapp/public/manifold/
 docs/api/_build/
 docs/api/_generated/
-docs/paper/*.aux
-docs/paper/*.log
-docs/paper/*.bbl
-docs/paper/*.blg
-docs/paper/*.out
+
+# Python build and test artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/

@@ -3,7 +3,7 @@
 Periodic lattice structures for 3D printing (DLP / resin), as one Python
 package.
 
-Joaquin Ramirez-Rico, University of Seville — [mates-lab.es](https://mates-lab.es/)
+MATES Lab, Universidad de Sevilla-CSIC — [mates-lab.es](https://mates-lab.es/)
 
     UnitCell  →  Skeleton or TPMS  →  UnitField  →  LatticeMesh  →  STL
 
@@ -106,10 +106,7 @@ python -m latticegen build octet --method struts --a 1 --rho 0.2 --cells 10 10 1
   `python -m sphinx -b html docs/api docs/api/_build/html`.
 * [`docs/manual/LatticeGenerator-User-Manual.pdf`](docs/manual/LatticeGenerator-User-Manual.pdf)
   – user manual of the Windows desktop app, with screenshots.
-* [`docs/paper/`](docs/paper/) – draft manuscript (LaTeX) with the benchmark
-  scripts behind its numbers.
 * [`examples/`](examples/) – runnable scripts.
-* [`legacy/`](legacy/) – the original three scripts this package grew from.
 
 ## Layout
 
@@ -134,3 +131,7 @@ latticegen/
 webapp/          browser GUI (Pyodide + Three.js); see webapp/README.md
 desktop/         Windows app: same GUI + native engine; see desktop/README.md
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 MATES Lab, Universidad de Sevilla-CSIC.

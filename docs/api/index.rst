@@ -2,7 +2,7 @@ latticegen
 ==========
 
 Periodic lattice structures for 3D printing (DLP / resin), as one Python
-package, by Joaquin Ramirez-Rico, University of Seville
+package, by MATES Lab, Universidad de Sevilla-CSIC
 (`mates-lab.es <https://mates-lab.es/>`_). This is the API reference, built
 from the docstrings. The ideas
 behind the methods are in ``docs/fundamentals.md`` and a task-oriented

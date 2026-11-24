@@ -1,6 +1,6 @@
 # Lattice Generator desktop app (Windows)
 
-Joaquin Ramirez-Rico, University of Seville — [mates-lab.es](https://mates-lab.es/)
+MATES Lab, Universidad de Sevilla-CSIC — [mates-lab.es](https://mates-lab.es/)
 
 The web front end from `webapp/` in its own window, backed by native Python.
 On top of the browser version, it can:

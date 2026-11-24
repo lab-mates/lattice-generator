@@ -1,6 +1,6 @@
 # latticegen web app
 
-Joaquin Ramirez-Rico, University of Seville — [mates-lab.es](https://mates-lab.es/)
+MATES Lab, Universidad de Sevilla-CSIC — [mates-lab.es](https://mates-lab.es/)
 
 A browser GUI for `latticegen`. The unchanged Python package runs in
 WebAssembly ([Pyodide](https://pyodide.org) 314.0.7, Python 3.14) inside a

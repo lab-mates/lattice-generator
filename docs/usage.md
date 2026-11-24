@@ -1,8 +1,8 @@
 # Usage guide
 
 Everything you need to build lattice blocks with `latticegen`, from install
-to print-ready STL or 3MF. latticegen is developed by Joaquin Ramirez-Rico,
-University of Seville ([mates-lab.es](https://mates-lab.es/)). The [fundamentals](fundamentals.md) explain *why* the
+to print-ready STL or 3MF. latticegen is developed by the MATES Lab,
+Universidad de Sevilla-CSIC ([mates-lab.es](https://mates-lab.es/)). The [fundamentals](fundamentals.md) explain *why* the
 tools work the way they do; this guide explains *how* to use them.
 
 Contents

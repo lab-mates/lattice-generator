@@ -83,7 +83,7 @@ class Test3MF(unittest.TestCase):
             model = zf.read("3D/3dmodel.model").decode()
         self.assertTrue({"[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model"} <= names)
         self.assertIn('unit="millimeter"', model)
-        self.assertIn("Ramirez-Rico", model)
+        self.assertIn("MATES Lab", model)
         q = lg.LatticeMesh.load(path)
         self.assertEqual((q.n_vertices, q.n_faces), (m.n_vertices, m.n_faces))
         np.testing.assert_array_equal(q.verts, m.verts)          # %.9g: exact float32
