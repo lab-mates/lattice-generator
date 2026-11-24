@@ -32,7 +32,7 @@ Contents
 
 Requirements: Python 3.10+, numpy, scipy, scikit-image, trimesh. Optional:
 pymeshlab (simplification, remeshing, repair, the remeshing steps of the
-instanced mesher). All are present in the `general` conda environment.
+instanced mesher).
 
 ```bash
 cd lattice-generator

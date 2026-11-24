@@ -37,14 +37,25 @@ MATES Lab, Universidad de Sevilla-CSIC — [mates-lab.es](https://mates-lab.es/)
   * `desktop/`: a Windows app (one zip, no install) with the native engine,
     including simplification, seam-consistent instancing and repair.
 
+**Windows app:** download `LatticeGenerator-win64-<version>.zip` from the
+[latest release](https://github.com/lab-mates/lattice-generator/releases/latest),
+unzip it and run `LatticeGenerator\LatticeGenerator.exe` (see
+[desktop/README.md](desktop/README.md)).
+
 ## Install
 
-The package is pure Python. In the `general` conda environment everything
-needed is already present (numpy, scipy, scikit-image, trimesh, pymeshlab,
-manifold3d). `manifold3d` (`pip install manifold3d`) builds the default
+The package is pure Python and needs numpy, scipy, scikit-image, trimesh and
+manifold3d (installed automatically). `manifold3d` builds the default
 strut-sized joints of `mesh_struts`; `node="hull"` works without it.
 
 ```bash
+pip install "latticegen @ git+https://github.com/lab-mates/lattice-generator"
+```
+
+Or, to work on the code:
+
+```bash
+git clone https://github.com/lab-mates/lattice-generator
 cd lattice-generator
 pip install -e .            # optional; or just run from this directory
 python -m unittest discover -s tests
