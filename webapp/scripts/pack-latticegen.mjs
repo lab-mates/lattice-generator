@@ -12,6 +12,7 @@ const files = { "bridge.py": readFileSync(join(ROOT, "py", "bridge.py")) };
 for (const f of readdirSync(PKG).filter((f) => f.endsWith(".py")).sort())
   files[`latticegen/${f}`] = readFileSync(join(PKG, f));
 
+mkdirSync(join(ROOT, "public"), { recursive: true });
 writeFileSync(join(ROOT, "public", "latticegen.zip"), zipSync(files, { level: 9 }));
 console.log(`public/latticegen.zip: ${Object.keys(files).length} files`);
 

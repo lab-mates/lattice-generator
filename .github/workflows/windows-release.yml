@@ -1,0 +1,89 @@
+# Build the Windows desktop app (LatticeGenerator-win64-<version>.zip) on a
+# Windows runner, run the bundle's self-test, and attach the zip to a release.
+#   - push a tag v<version> (matching latticegen.__version__) -> build + release
+#   - run it by hand (Actions tab -> Run workflow)              -> build only, zip as artifact
+name: Windows app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Build the web front end
+        working-directory: webapp
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install the build environment
+        # pip wheels on purpose (see desktop/README.md: conda's numpy/scipy bring MKL)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy scikit-image trimesh manifold3d pymeshlab pywebview pyinstaller
+
+      - name: Version
+        id: version
+        run: |
+          $v = python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('latticegen/__init__.py').read()).group(1))"
+          "version=$v" >> $env:GITHUB_OUTPUT
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$v") {
+            throw "Tag ${{ github.ref_name }} does not match latticegen.__version__ $v"
+          }
+
+      - name: Build with PyInstaller and self-test the bundle
+        run: |
+          $work = "$env:RUNNER_TEMP\latticegen-build"
+          New-Item -ItemType Directory -Force "$work\src" | Out-Null
+          # stage only what the spec needs (as desktop/build/build.sh does)
+          foreach ($d in "latticegen", "desktop", "webapp\py", "webapp\dist", "docs\manual") {
+            New-Item -ItemType Directory -Force "$work\src\$d" | Out-Null
+            Copy-Item "$d\*" "$work\src\$d" -Recurse -Force
+          }
+          Remove-Item "$work\src\webapp\dist\pyodide", "$work\src\webapp\dist\latticegen.zip" -Recurse -Force -ErrorAction SilentlyContinue
+          $python = (Get-Command python).Source
+          & desktop\build\build_windows.ps1 -Work $work -Python $python -Version "${{ steps.version.outputs.version }}"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$work\selftest.txt" -ErrorAction SilentlyContinue; throw "self-test failed ($LASTEXITCODE)" }
+          Get-Content "$work\selftest.txt" -ErrorAction SilentlyContinue
+          Copy-Item "$work\LatticeGenerator-win64-${{ steps.version.outputs.version }}.zip" "$env:GITHUB_WORKSPACE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LatticeGenerator-win64-${{ steps.version.outputs.version }}
+          path: LatticeGenerator-win64-${{ steps.version.outputs.version }}.zip
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "LatticeGenerator-win64-${{ steps.version.outputs.version }}.zip"
+          gh release view "${{ github.ref_name }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "${{ github.ref_name }}" $zip --title "Lattice Generator ${{ steps.version.outputs.version }}" --notes-file .github/release-notes.md
+          } else {
+            gh release upload "${{ github.ref_name }}" $zip --clobber
+          }

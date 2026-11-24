@@ -18,7 +18,8 @@ LatticeGenerator.exe ── pywebview window (Microsoft WebView2) ── same HT
 latticegen.exe       ── console: `latticegen selftest`, or the full latticegen CLI
 ```
 
-Colleagues unzip `LatticeGenerator-win64-<version>.zip` anywhere and run
+Download `LatticeGenerator-win64-<version>.zip` from the
+[Releases page](https://github.com/lab-mates/lattice-generator/releases), unzip it anywhere and run
 `LatticeGenerator\LatticeGenerator.exe`. The user manual,
 `LatticeGenerator-User-Manual.pdf` (from `docs/manual/`), is in the same folder.
 There's nothing to install: WebView2 and .NET ship with Windows 10/11. The exe is unsigned, so the first start shows
@@ -48,11 +49,17 @@ python -m unittest tests.test_desktop_server
 
 ## Build the Windows app
 
-One-time setup, in the Windows Miniconda:
+Releases are built by GitHub Actions (`.github/workflows/windows-release.yml`):
+set `__version__` in `latticegen/__init__.py`, then push a matching tag, e.g.
+`git tag v1.0.1 && git push origin v1.0.1`. The workflow builds the web front end,
+runs PyInstaller and the bundle's self-test on Windows, and attaches the zip to
+the release. *Run workflow* on the Actions tab builds without releasing.
+
+To build locally instead, one-time setup in the Windows Miniconda:
 
 ```bat
 conda create -n latticegen-build -c conda-forge --override-channels python=3.14 pip
-C:\Users\jrr\miniconda3\envs\latticegen-build\python.exe -m pip install numpy scipy scikit-image pymeshlab pywebview pyinstaller
+%USERPROFILE%\miniconda3\envs\latticegen-build\python.exe -m pip install numpy scipy scikit-image pymeshlab pywebview pyinstaller
 ```
 
 Use pip wheels, not conda's numpy/scipy: conda's builds bring Intel MKL, which is
